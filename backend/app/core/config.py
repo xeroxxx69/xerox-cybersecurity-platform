@@ -30,6 +30,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
         "https://xeroxxx69.github.io",
         "https://ghoshankan429-sys.github.io",
+        "https://xeroxxx69.github.io",
     ]
 
     @field_validator("CORS_ORIGINS", mode="before")
@@ -70,6 +71,11 @@ class Settings(BaseSettings):
     COOKIE_DOMAIN: Optional[str] = None
 
     def model_post_init(self, __context) -> None:
+        # Keep the active GitHub Pages origin allowed even when hosting env vars override defaults.
+        pages_origin = "https://xeroxxx69.github.io"
+        if pages_origin not in self.CORS_ORIGINS:
+            self.CORS_ORIGINS.append(pages_origin)
+
         if self.ENVIRONMENT == "production":
             self.COOKIE_SECURE = True
             if self.COOKIE_SAMESITE == "lax":
