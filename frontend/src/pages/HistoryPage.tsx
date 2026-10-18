@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { History, ExternalLink, RefreshCw, Search } from "lucide-react";
 import { getHistory } from "@/services/api";
+import { useAuth } from "@/features/auth/AuthContext";
 import { ScanHistoryItem } from "@/types";
 import {
   Button,
@@ -14,12 +15,18 @@ import {
 type FilterType = "ALL" | "URL" | "MESSAGE" | "SCREENSHOT" | "FILE" | "HIGH_RISK" | "MEDIUM_RISK" | "LOW_RISK";
 
 export const HistoryPage: React.FC = () => {
+  const { user } = useAuth();
   const [history, setHistory] = useState<ScanHistoryItem[]>([]);
   const [activeFilter, setActiveFilter] = useState<FilterType>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
   const fetchHistory = async () => {
+    if (!user) {
+      setHistory([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const data = await getHistory(50);
@@ -33,7 +40,7 @@ export const HistoryPage: React.FC = () => {
 
   useEffect(() => {
     fetchHistory();
-  }, []);
+  }, [user]);
 
   const filteredHistory = useMemo(() => {
     return history.filter((item) => {
@@ -103,6 +110,21 @@ export const HistoryPage: React.FC = () => {
         </Button>
       </div>
 
+      {!user ? (
+        <div className="rounded-2xl bg-xerox-surface border border-xerox-border p-8 sm:p-10 text-center space-y-4">
+          <History className="w-10 h-10 text-xerox-red mx-auto" />
+          <h2 className="text-xl font-bold text-white">History is an account feature</h2>
+          <p className="text-sm text-slate-400 max-w-xl mx-auto">
+            You can use XEROX without signing in. Sign in or create an account when you want
+            scans and previous reports saved to your personal history.
+          </p>
+          <div className="flex justify-center gap-3">
+            <Link to="/login"><Button variant="primary" size="sm">SIGN IN</Button></Link>
+            <Link to="/register"><Button variant="secondary" size="sm">CREATE ACCOUNT</Button></Link>
+            <Link to="/analyze"><Button variant="outline" size="sm">START A SCAN</Button></Link>
+          </div>
+        </div>
+      ) : (
       {/* Filter and Search Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
         {/* Filter Pills */}
@@ -197,6 +219,7 @@ export const HistoryPage: React.FC = () => {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 };
