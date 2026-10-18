@@ -1,7 +1,6 @@
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/features/auth/AuthContext";
-import { ProtectedRoute } from "@/components/common/ProtectedRoute";
 import { MainLayout } from "@/layouts/MainLayout";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { AnalyzePage } from "@/pages/AnalyzePage";
@@ -12,6 +11,11 @@ import { SettingsPage } from "@/pages/SettingsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
 
+/**
+ * XEROX uses a guest-first experience. Public analysis pages must never
+ * redirect visitors to authentication. Sign-in is optional and is used for
+ * account-backed history and settings.
+ */
 export const App: React.FC = () => {
   return (
     <AuthProvider>
@@ -19,70 +23,15 @@ export const App: React.FC = () => {
         <MainLayout>
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-
-            {/* Public Authentication Routes */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
-
-            {/* Protected Application Routes */}
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute>
-                  <DashboardPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/analyze"
-              element={
-                <ProtectedRoute>
-                  <AnalyzePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/history"
-              element={
-                <ProtectedRoute>
-                  <HistoryPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/threat-intel"
-              element={
-                <ProtectedRoute>
-                  <ThreatIntelPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/history/:id"
-              element={
-                <ProtectedRoute>
-                  <ReportsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/reports"
-              element={
-                <ProtectedRoute>
-                  <ReportsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <ProtectedRoute>
-                  <SettingsPage />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* Fallback */}
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/analyze" element={<AnalyzePage />} />
+            <Route path="/history" element={<HistoryPage />} />
+            <Route path="/threat-intel" element={<ThreatIntelPage />} />
+            <Route path="/history/:id" element={<ReportsPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </MainLayout>
