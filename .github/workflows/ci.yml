@@ -41,7 +41,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: ./frontend/package.json
 
@@ -51,9 +51,7 @@ jobs:
 
       - name: Run frontend tests
         working-directory: ./frontend
-        run: |
-          node --experimental-strip-types tests/test_api_config.mjs
-          node --experimental-strip-types tests/test_validation_unit.mjs
+        run: npm test
 
       - name: Build frontend
         working-directory: ./frontend
