@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 
-const BASE_URL = "http://127.0.0.1:8000";
+const RAW_URL = process.env.XEROX_BACKEND_URL || process.argv[2] || "http://127.0.0.1:8000";
+const BASE_URL = RAW_URL.replace(/\/+$/, "").replace(/\/api\/v1\/?$/, "");
+const API_URL = `${BASE_URL}/api/v1`;
 
 async function run() {
-  console.log("=== RUNNING FULL LIVE END-TO-END AUTH INTEGRATION TEST ===");
+  console.log(`=== RUNNING XEROX PRODUCTION SMOKE TEST AGAINST: ${API_URL} ===`);
 
   // 1. Health check
   console.log("\n1. Verifying /health and /api/v1/health...");
@@ -13,13 +15,13 @@ async function run() {
   assert.equal(h1Data.status, "healthy");
   assert.equal(h1Data.database, "connected");
 
-  const h2 = await fetch(`${BASE_URL}/api/v1/health`);
+  const h2 = await fetch(`${API_URL}/health`);
   assert.equal(h2.status, 200, "/api/v1/health must return 200");
   console.log("✓ Health checks passed. Backend is healthy and database is connected.");
 
   // 2. CORS Preflight check from production origin
   console.log("\n2. Verifying CORS Preflight from https://xeroxxx69.github.io...");
-  const corsRes = await fetch(`${BASE_URL}/api/v1/auth/login`, {
+  const corsRes = await fetch(`${API_URL}/auth/login`, {
     method: "OPTIONS",
     headers: {
       Origin: "https://xeroxxx69.github.io",
@@ -44,7 +46,7 @@ async function run() {
   const testEmail = `analyst_test_${Date.now()}@xerox.sec`;
   const testPassword = "StrongPassword2026!";
   console.log(`\n3. Registering test analyst account: ${testEmail}...`);
-  const regRes = await fetch(`${BASE_URL}/api/v1/auth/register`, {
+  const regRes = await fetch(`${API_URL}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: testEmail, password: testPassword }),
@@ -57,7 +59,7 @@ async function run() {
 
   // 4. Duplicate registration rejection
   console.log("\n4. Verifying duplicate email rejection...");
-  const dupRes = await fetch(`${BASE_URL}/api/v1/auth/register`, {
+  const dupRes = await fetch(`${API_URL}/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: testEmail, password: testPassword }),
@@ -67,7 +69,7 @@ async function run() {
 
   // 5. Invalid credentials rejection
   console.log("\n5. Verifying rejection of invalid login credentials...");
-  const invalidLoginRes = await fetch(`${BASE_URL}/api/v1/auth/login`, {
+  const invalidLoginRes = await fetch(`${API_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: testEmail, password: "WrongPassword999!" }),
@@ -79,7 +81,7 @@ async function run() {
 
   // 6. Valid Authentication & Session Token Issuance
   console.log("\n6. Authenticating with valid credentials...");
-  const loginRes = await fetch(`${BASE_URL}/api/v1/auth/login`, {
+  const loginRes = await fetch(`${API_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: testEmail, password: testPassword }),
@@ -92,7 +94,7 @@ async function run() {
 
   // 7. Access Protected Endpoint with Session Token
   console.log("\n7. Accessing protected /api/v1/auth/me with Bearer token...");
-  const meRes = await fetch(`${BASE_URL}/api/v1/auth/me`, {
+  const meRes = await fetch(`${API_URL}/auth/me`, {
     headers: { Authorization: `Bearer ${loginData.session_token}` },
   });
   assert.equal(meRes.status, 200, "Protected endpoint must accept valid session token");
@@ -102,7 +104,7 @@ async function run() {
 
   // 8. Access Protected Endpoint WITHOUT Token
   console.log("\n8. Accessing protected endpoint without credentials (should fail)...");
-  const unauthRes = await fetch(`${BASE_URL}/api/v1/auth/me`);
+  const unauthRes = await fetch(`${API_URL}/auth/me`);
   assert.equal(unauthRes.status, 401, "Protected endpoint without token must return HTTP 401");
   console.log("✓ Unauthenticated access correctly blocked with 401.");
 
