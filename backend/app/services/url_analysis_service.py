@@ -51,8 +51,8 @@ class URLAnalysisService:
     async def analyze_url(
         self,
         raw_url: str,
-        user_id: uuid.UUID,
-        db: AsyncSession,
+        user_id: Optional[uuid.UUID] = None,
+        db: Optional[AsyncSession] = None,
     ) -> ThreatReport:
         """Executes the complete URL security analysis pipeline.
         
@@ -138,61 +138,69 @@ class URLAnalysisService:
         )
 
         now_dt = get_monotonic_utc_now()
-        # 5. Database Persistence (Strict user_id tenant isolation)
-        scan = Scan(
-            user_id=user_id,
-            input_type="URL",
-            input_hash=norm_url.url_hash,
-            risk_score=assessment.score,
-            verdict=assessment.level.value,
-            created_at=now_dt,
-        )
-        db.add(scan)
-        await db.flush()  # Populates scan.id
+        scan_id = uuid.uuid4()
+        analyzed_at_str = now_dt.isoformat()
 
-        # Persist structured findings (enforcing schema bounds)
-        for finding in findings:
-            db_finding = Finding(
-                scan_id=scan.id,
-                indicator_type=finding.title[:64],
-                indicator=finding.technical_proof[:512],
-                severity=finding.severity.value,
-                source="STATIC_HEURISTICS" if "Threat Intelligence" not in finding.title else "VIRUSTOTAL",
-                explanation=finding.description,
-            )
-            db.add(db_finding)
+        # 5. Database Persistence (Strict user_id tenant isolation for authenticated users)
+        if user_id is not None and db is not None:
+            try:
+                scan = Scan(
+                    id=scan_id,
+                    user_id=user_id,
+                    input_type="URL",
+                    input_hash=norm_url.url_hash,
+                    risk_score=assessment.score,
+                    verdict=assessment.level.value,
+                    created_at=now_dt,
+                )
+                db.add(scan)
+                await db.flush()  # Populates scan.id
 
-        # Record Audit Log with full audit detail payload
-        audit_entry = AuditLog(
-            user_id=user_id,
-            scan_id=scan.id,
-            event_type="URL_SCAN_COMPLETED",
-            details={
-                "target_type": "URL",
-                "raw_target": norm_url.raw_url,
-                "defanged_target": norm_url.defanged_url,
-                "risk_score": assessment.score,
-                "verdict": assessment.level.value,
-                "confidence_score": assessment.confidence,
-                "executive_summary": exec_summary,
-                "layman_verdict": layman_verdict,
-                "findings_count": len(findings),
-                "threat_intel_status": threat_intel.status.value if threat_intel else "SKIPPED",
-                "is_cached": threat_intel.cached if threat_intel else False,
-                "recommended_actions": [a.model_dump() for a in assessment.recommended_actions],
-                "technical_metadata": heuristic_result.metadata.model_dump(),
-            },
-        )
-        db.add(audit_entry)
+                # Persist structured findings (enforcing schema bounds)
+                for finding in findings:
+                    db_finding = Finding(
+                        scan_id=scan.id,
+                        indicator_type=finding.title[:64],
+                        indicator=finding.technical_proof[:512],
+                        severity=finding.severity.value,
+                        source="STATIC_HEURISTICS" if "Threat Intelligence" not in finding.title else "VIRUSTOTAL",
+                        explanation=finding.description,
+                    )
+                    db.add(db_finding)
 
-        await db.commit()
-        await db.refresh(scan)
+                # Record Audit Log with full audit detail payload
+                audit_entry = AuditLog(
+                    user_id=user_id,
+                    scan_id=scan.id,
+                    event_type="URL_SCAN_COMPLETED",
+                    details={
+                        "target_type": "URL",
+                        "raw_target": norm_url.raw_url,
+                        "defanged_target": norm_url.defanged_url,
+                        "risk_score": assessment.score,
+                        "verdict": assessment.level.value,
+                        "confidence_score": assessment.confidence,
+                        "executive_summary": exec_summary,
+                        "layman_verdict": layman_verdict,
+                        "findings_count": len(findings),
+                        "threat_intel_status": threat_intel.status.value if threat_intel else "SKIPPED",
+                        "is_cached": threat_intel.cached if threat_intel else False,
+                        "recommended_actions": [a.model_dump() for a in assessment.recommended_actions],
+                        "technical_metadata": heuristic_result.metadata.model_dump(),
+                    },
+                )
+                db.add(audit_entry)
+
+                await db.commit()
+                await db.refresh(scan)
+                scan_id = scan.id
+                analyzed_at_str = scan.created_at.isoformat()
+            except Exception as db_exc:
+                logger.error(f"Failed to persist authenticated URL scan to database: {db_exc}", exc_info=True)
 
         # 6. Assemble ThreatReport
-        analyzed_at_str = scan.created_at.isoformat()
-
         return ThreatReport(
-            scan_id=str(scan.id),
+            scan_id=str(scan_id),
             target_type=TargetType.URL,
             raw_target=norm_url.raw_url,
             defanged_target=norm_url.defanged_url,

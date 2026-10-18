@@ -23,14 +23,28 @@ SAMPLE_PDF = (
 
 
 @pytest.mark.asyncio
-async def test_unauthenticated_analyze_file_rejected(async_client: AsyncClient):
-    """Accessing /analyze/file without auth token returns 401."""
-    files = {"file": ("test.pdf", SAMPLE_PDF, "application/pdf")}
+async def test_unauthenticated_guest_file_analysis_succeeds_without_persistence(async_client: AsyncClient):
+    """Guest can submit files for security inspection without authentication; scan is not saved to DB."""
+    files = {"file": ("guest_sample.pdf", SAMPLE_PDF, "application/pdf")}
     response = await async_client.post(
         f"{settings.API_V1_STR}/analyze/file",
         files=files,
     )
-    assert response.status_code == 401
+    assert response.status_code == 200
+    report = response.json()
+
+    assert "scan_id" in report
+    assert report["target_type"] == "FILE"
+    assert report["risk_score"] >= 70
+    assert report["risk_level"] in ("HIGH RISK", "CRITICAL")
+    assert len(report["evidence_items"]) > 0
+
+    # Verify scan is NOT written to database for guests
+    scan_uuid = uuid.UUID(report["scan_id"])
+    async with AsyncSessionLocal() as db:
+        stmt = select(Scan).where(Scan.id == scan_uuid)
+        scan = (await db.execute(stmt)).scalar_one_or_none()
+        assert scan is None, "Guest scans must not be written to the database"
 
 
 @pytest.mark.asyncio

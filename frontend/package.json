@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "test": "npx tsx tests/test_api_config.mjs && npx tsx tests/test_validation_unit.mjs"
+    "test": "npx tsx tests/test_api_config.mjs && npx tsx tests/test_validation_unit.mjs && npx tsx tests/test_guest_storage.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^9.122.0",

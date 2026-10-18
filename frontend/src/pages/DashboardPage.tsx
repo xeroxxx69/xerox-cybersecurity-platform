@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
 import { getStats, getHistory } from "@/services/api";
+import { getGuestStats, getGuestHistory } from "@/services/guestStorage";
 import { StatsSummary, ScanHistoryItem } from "@/types";
 import {
   Card,
@@ -48,23 +49,31 @@ export const DashboardPage: React.FC = () => {
 
   useEffect(() => {
     async function loadData() {
-      try {
-        const [statsData, historyData] = await Promise.all([
-          getStats().catch(() => null),
-          getHistory(5).catch(() => null),
-        ]);
-        if (statsData) {
-          setStats(statsData);
+      if (user) {
+        try {
+          const [statsData, historyData] = await Promise.all([
+            getStats().catch(() => null),
+            getHistory(5).catch(() => null),
+          ]);
+          if (statsData) {
+            setStats(statsData);
+          }
+          if (historyData) {
+            setRecentScans(historyData);
+          }
+        } catch {
+          // preserve current state
         }
-        if (historyData) {
-          setRecentScans(historyData);
-        }
-      } catch {
-        // preserve current state
+      } else {
+        // Load guest stats and guest history from local device storage
+        const guestStats = getGuestStats();
+        const guestHistory = getGuestHistory().slice(0, 5);
+        setStats(guestStats);
+        setRecentScans(guestHistory);
       }
     }
     loadData();
-  }, []);
+  }, [user]);
 
   const handleQuickUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,6 +113,27 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Guest Mode Telemetry Notice */}
+      {!user && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-gradient-to-r from-xerox-surface-elevated to-xerox-surface border border-xerox-border text-xs font-mono gap-3 shadow-panel">
+          <div className="flex items-center gap-3 text-slate-300">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+            <div>
+              <span className="text-white font-bold block sm:inline">GUEST OPERATOR SESSION: </span>
+              <span className="text-slate-400">
+                Analysis telemetry & recent scan results are stored in local browser memory.
+              </span>
+            </div>
+          </div>
+          <Link
+            to="/login"
+            className="text-red-400 hover:text-red-300 font-bold tracking-wider inline-flex items-center gap-1.5 flex-shrink-0"
+          >
+            INITIALIZE SESSION TO SYNC ACROSS DEVICES &rarr;
+          </Link>
+        </div>
+      )}
 
       {/* 4 Key Security Overview Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

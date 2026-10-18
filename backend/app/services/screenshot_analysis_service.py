@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.storage.base import ScreenshotStorage
+from app.storage.base import ScreenshotStorage, StoredScreenshotMetadata
 from app.storage.local import LocalScreenshotStorage
 from app.analyzers.screenshot.validator import ScreenshotValidator, ValidatedImage
 from app.analyzers.screenshot.normalizer import normalize_ocr_text, NormalizedOCR
@@ -63,10 +63,10 @@ class ScreenshotAnalysisService:
     async def analyze_screenshot(
         self,
         file_bytes: bytes,
-        declared_mime: Optional[str],
-        client_filename: Optional[str],
-        user_id: uuid.UUID,
-        db: AsyncSession,
+        declared_mime: Optional[str] = None,
+        client_filename: Optional[str] = None,
+        user_id: Optional[uuid.UUID] = None,
+        db: Optional[AsyncSession] = None,
     ) -> ThreatReport:
         """Executes the complete safe screenshot security analysis pipeline."""
 
@@ -77,13 +77,23 @@ class ScreenshotAnalysisService:
             client_filename=client_filename,
         )
 
-        # 2. Persist in Isolated Storage (Outside application source tree, non-user filename)
-        stored_meta = await self.storage.save(
-            file_bytes=val_img.content,
-            extension=val_img.safe_extension,
-            mime_type=val_img.mime_type,
-            sha256_hash=val_img.sha256_hash,
-        )
+        # 2. Persist in Isolated Storage (For authenticated users only; avoid permanent storage for guests)
+        if user_id is not None:
+            stored_meta = await self.storage.save(
+                file_bytes=val_img.content,
+                extension=val_img.safe_extension,
+                mime_type=val_img.mime_type,
+                sha256_hash=val_img.sha256_hash,
+            )
+        else:
+            stored_meta = StoredScreenshotMetadata(
+                storage_key="transient-guest",
+                file_path="",
+                file_size_bytes=val_img.file_size_bytes,
+                sha256_hash=val_img.sha256_hash,
+                mime_type=val_img.mime_type,
+                created_at=get_monotonic_utc_now().isoformat(),
+            )
 
         # 3. Vision & OCR Extraction
         vision_result = await self.vision_provider.extract(
@@ -187,63 +197,67 @@ class ScreenshotAnalysisService:
             context_notes=context_notes,
         )
 
-        # 11. Database Persistence with Strict User Isolation
+        # 11. Database Persistence with Strict User Isolation (For authenticated users only)
         scan_id = uuid.uuid4()
         now_dt = get_monotonic_utc_now()
 
-        scan = Scan(
-            id=scan_id,
-            user_id=user_id,
-            input_type="SCREENSHOT",
-            input_hash=val_img.sha256_hash,
-            risk_score=assessment.risk_score,
-            verdict=assessment.risk_level.value,
-            created_at=now_dt,
-        )
-        db.add(scan)
+        if user_id is not None and db is not None:
+            try:
+                scan = Scan(
+                    id=scan_id,
+                    user_id=user_id,
+                    input_type="SCREENSHOT",
+                    input_hash=val_img.sha256_hash,
+                    risk_score=assessment.risk_score,
+                    verdict=assessment.risk_level.value,
+                    created_at=now_dt,
+                )
+                db.add(scan)
 
-        # Persist findings
-        for finding in assessment.all_findings:
-            db_finding = Finding(
-                id=uuid.uuid4(),
-                scan_id=scan_id,
-                indicator_type=finding.category.value,
-                indicator=finding.title[:512],
-                severity=finding.severity.value,
-                source="SCREENSHOT_ENGINE",
-                explanation=f"{finding.description}\nTechnical Proof: {finding.technical_proof}",
-                created_at=now_dt,
-            )
-            db.add(db_finding)
+                # Persist findings
+                for finding in assessment.all_findings:
+                    db_finding = Finding(
+                        id=uuid.uuid4(),
+                        scan_id=scan_id,
+                        indicator_type=finding.category.value,
+                        indicator=finding.title[:512],
+                        severity=finding.severity.value,
+                        source="SCREENSHOT_ENGINE",
+                        explanation=f"{finding.description}\nTechnical Proof: {finding.technical_proof}",
+                        created_at=now_dt,
+                    )
+                    db.add(db_finding)
 
-        # Persist privacy-safe audit log (NO passwords, NO raw OCR text, NO PII)
-        audit_details = {
-            "storage_key": stored_meta.storage_key,
-            "file_size_bytes": val_img.file_size_bytes,
-            "mime_type": val_img.mime_type,
-            "width": val_img.width,
-            "height": val_img.height,
-            "sha256": val_img.sha256_hash,
-            "extracted_urls_count": len(combined_urls),
-            "extracted_domains_count": len(combined_domains),
-            "detected_brands": all_detected_brands,
-            "visual_elements": vision_result.visual_elements,
-            "risk_score": assessment.risk_score,
-            "risk_level": assessment.risk_level.value,
-            "provider": vision_result.provider_name,
-            "provider_available": vision_result.is_available,
-        }
-        audit_log = AuditLog(
-            id=uuid.uuid4(),
-            user_id=user_id,
-            scan_id=scan_id,
-            event_type="SCREENSHOT_ANALYZED",
-            details=audit_details,
-            created_at=now_dt,
-        )
-        db.add(audit_log)
+                # Persist privacy-safe audit log (NO passwords, NO raw OCR text, NO PII)
+                audit_details = {
+                    "storage_key": stored_meta.storage_key,
+                    "file_size_bytes": val_img.file_size_bytes,
+                    "mime_type": val_img.mime_type,
+                    "width": val_img.width,
+                    "height": val_img.height,
+                    "sha256": val_img.sha256_hash,
+                    "extracted_urls_count": len(combined_urls),
+                    "extracted_domains_count": len(combined_domains),
+                    "detected_brands": all_detected_brands,
+                    "visual_elements": vision_result.visual_elements,
+                    "risk_score": assessment.risk_score,
+                    "risk_level": assessment.risk_level.value,
+                    "provider": vision_result.provider_name,
+                    "provider_available": vision_result.is_available,
+                }
+                audit_log = AuditLog(
+                    id=uuid.uuid4(),
+                    user_id=user_id,
+                    scan_id=scan_id,
+                    event_type="SCREENSHOT_ANALYZED",
+                    details=audit_details,
+                    created_at=now_dt,
+                )
+                db.add(audit_log)
 
-        await db.commit()
+                await db.commit()
+            except Exception as db_exc:
+                logger.error(f"Failed to persist authenticated screenshot scan to database: {db_exc}", exc_info=True)
 
         # 12. Assemble ThreatReport
         target_display = f"[SCREENSHOT]: {val_img.client_filename} ({val_img.width}x{val_img.height}, {val_img.mime_type})"

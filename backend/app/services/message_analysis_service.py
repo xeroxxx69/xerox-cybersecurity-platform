@@ -52,8 +52,8 @@ class MessageAnalysisService:
     async def analyze_message(
         self,
         content: str,
-        user_id: uuid.UUID,
-        db: AsyncSession,
+        user_id: Optional[uuid.UUID] = None,
+        db: Optional[AsyncSession] = None,
         subject: Optional[str] = None,
         sender: Optional[str] = None,
         sender_metadata: Optional[str] = None,
@@ -190,29 +190,8 @@ class MessageAnalysisService:
         )
 
         now_dt = get_monotonic_utc_now()
-        # 7. Database Persistence (Strict user_id tenant isolation)
-        scan = Scan(
-            user_id=user_id,
-            input_type="MESSAGE",
-            input_hash=norm_msg.content_hash,
-            risk_score=assessment.score,
-            verdict=assessment.level.value,
-            created_at=now_dt,
-        )
-        db.add(scan)
-        await db.flush()  # Populates scan.id
-
-        # Persist structured findings (enforcing schema bounds)
-        for finding in combined_findings:
-            db_finding = Finding(
-                scan_id=scan.id,
-                indicator_type=finding.title[:64],
-                indicator=finding.technical_proof[:512],
-                severity=finding.severity.value,
-                source="PHISHING_DETECTOR" if "Embedded Link" not in finding.title else "URL_ENGINE",
-                explanation=finding.description,
-            )
-            db.add(db_finding)
+        scan_id = uuid.uuid4()
+        analyzed_at_str = now_dt.isoformat()
 
         # Assemble TechnicalMetadata
         all_detected_brands = list(set(heuristics_result.detected_brands + url_detected_brands))
@@ -224,46 +203,75 @@ class MessageAnalysisService:
             ip_addresses=iocs.ipv4_addresses + iocs.ipv6_addresses,
         )
 
-        # Record Audit Log
-        audit_entry = AuditLog(
-            user_id=user_id,
-            scan_id=scan.id,
-            event_type="MESSAGE_SCAN_COMPLETED",
-            details={
-                "target_type": "MESSAGE",
-                "raw_target": norm_msg.raw_content[:200],
-                "defanged_target": norm_msg.defanged_content[:200],
-                "subject": norm_msg.subject,
-                "sender": norm_msg.sender,
-                "sender_metadata": norm_msg.sender_metadata,
-                "risk_score": assessment.score,
-                "verdict": assessment.level.value,
-                "confidence_score": assessment.confidence,
-                "executive_summary": exec_summary,
-                "layman_verdict": layman_verdict,
-                "findings_count": len(combined_findings),
-                "extracted_urls_count": len(iocs.urls),
-                "extracted_iocs": {
-                    "urls": iocs.urls,
-                    "domains": iocs.domains,
-                    "ipv4": iocs.ipv4_addresses,
-                    "emails": iocs.email_addresses,
-                    "phones": iocs.phone_numbers,
-                },
-                "recommended_actions": [a.model_dump() for a in assessment.recommended_actions],
-                "technical_metadata": metadata.model_dump(),
-            },
-        )
-        db.add(audit_entry)
+        # 7. Database Persistence (Strict user_id tenant isolation for authenticated users)
+        if user_id is not None and db is not None:
+            try:
+                scan = Scan(
+                    id=scan_id,
+                    user_id=user_id,
+                    input_type="MESSAGE",
+                    input_hash=norm_msg.content_hash,
+                    risk_score=assessment.score,
+                    verdict=assessment.level.value,
+                    created_at=now_dt,
+                )
+                db.add(scan)
+                await db.flush()  # Populates scan.id
 
-        await db.commit()
-        await db.refresh(scan)
+                # Persist structured findings (enforcing schema bounds)
+                for finding in combined_findings:
+                    db_finding = Finding(
+                        scan_id=scan.id,
+                        indicator_type=finding.title[:64],
+                        indicator=finding.technical_proof[:512],
+                        severity=finding.severity.value,
+                        source="PHISHING_DETECTOR" if "Embedded Link" not in finding.title else "URL_ENGINE",
+                        explanation=finding.description,
+                    )
+                    db.add(db_finding)
+
+                # Record Audit Log
+                audit_entry = AuditLog(
+                    user_id=user_id,
+                    scan_id=scan.id,
+                    event_type="MESSAGE_SCAN_COMPLETED",
+                    details={
+                        "target_type": "MESSAGE",
+                        "raw_target": norm_msg.raw_content[:200],
+                        "defanged_target": norm_msg.defanged_content[:200],
+                        "subject": norm_msg.subject,
+                        "sender": norm_msg.sender,
+                        "sender_metadata": norm_msg.sender_metadata,
+                        "risk_score": assessment.score,
+                        "verdict": assessment.level.value,
+                        "confidence_score": assessment.confidence,
+                        "executive_summary": exec_summary,
+                        "layman_verdict": layman_verdict,
+                        "findings_count": len(combined_findings),
+                        "extracted_urls_count": len(iocs.urls),
+                        "extracted_iocs": {
+                            "urls": iocs.urls,
+                            "domains": iocs.domains,
+                            "ipv4": iocs.ipv4_addresses,
+                            "emails": iocs.email_addresses,
+                            "phones": iocs.phone_numbers,
+                        },
+                        "recommended_actions": [a.model_dump() for a in assessment.recommended_actions],
+                        "technical_metadata": metadata.model_dump(),
+                    },
+                )
+                db.add(audit_entry)
+
+                await db.commit()
+                await db.refresh(scan)
+                scan_id = scan.id
+                analyzed_at_str = scan.created_at.isoformat()
+            except Exception as db_exc:
+                logger.error(f"Failed to persist authenticated message scan to database: {db_exc}", exc_info=True)
 
         # 8. Assemble ThreatReport
-        analyzed_at_str = scan.created_at.isoformat()
-
         return ThreatReport(
-            scan_id=str(scan.id),
+            scan_id=str(scan_id),
             target_type=TargetType.MESSAGE,
             raw_target=norm_msg.raw_content,
             defanged_target=norm_msg.defanged_content,

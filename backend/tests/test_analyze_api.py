@@ -32,13 +32,42 @@ async def create_authenticated_user(async_client: AsyncClient, email_prefix: str
 
 
 @pytest.mark.asyncio
-async def test_unauthenticated_analyze_url_rejected(async_client: AsyncClient):
-    """Accessing /analyze/url without session cookie returns 401."""
+async def test_unauthenticated_guest_url_analysis_succeeds_without_persistence(async_client: AsyncClient):
+    """Guest can analyze URLs without authentication; scan is not saved to DB; private history remains 401."""
     response = await async_client.post(
         f"{settings.API_V1_STR}/analyze/url",
+        json={"url": "https://paypal-security-update.serveo.net/login"},
+    )
+    assert response.status_code == 200
+    report = response.json()
+
+    assert "scan_id" in report
+    assert report["target_type"] == "URL"
+    assert report["risk_score"] > 0
+    assert report["risk_level"] in ("HIGH RISK", "CRITICAL", "SUSPICIOUS")
+    assert len(report["evidence_items"]) > 0
+
+    # Verify scan is NOT persisted in DB for unauthenticated guests
+    scan_uuid = uuid.UUID(report["scan_id"])
+    async with AsyncSessionLocal() as db:
+        stmt = select(Scan).where(Scan.id == scan_uuid)
+        scan = (await db.execute(stmt)).scalar_one_or_none()
+        assert scan is None, "Guest scans must not be written to the database"
+
+    # Verify private history and stats endpoints strictly require authentication (401)
+    history_resp = await async_client.get(f"{settings.API_V1_STR}/analyze/history")
+    assert history_resp.status_code == 401
+
+    stats_resp = await async_client.get(f"{settings.API_V1_STR}/analyze/stats/summary")
+    assert stats_resp.status_code == 401
+
+    # Verify invalid or expired authorization header does not prevent guest analysis
+    invalid_auth_resp = await async_client.post(
+        f"{settings.API_V1_STR}/analyze/url",
+        headers={"Authorization": "Bearer invalid.expired.token"},
         json={"url": "https://example.com"},
     )
-    assert response.status_code == 401
+    assert invalid_auth_resp.status_code == 200
 
 
 @pytest.mark.asyncio

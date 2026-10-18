@@ -32,13 +32,39 @@ async def create_authenticated_user(async_client: AsyncClient, email_prefix: str
 
 
 @pytest.mark.asyncio
-async def test_unauthenticated_analyze_message_rejected(async_client: AsyncClient):
-    """Accessing /analyze/message without session cookie returns 401."""
+async def test_unauthenticated_guest_message_analysis_succeeds_without_persistence(async_client: AsyncClient):
+    """Guest can submit messages for phishing analysis without authentication; scan is not saved to DB."""
+    message_text = (
+        "USPS Alert: Your package delivery has an unpaid customs fee of $2.49. "
+        "Visit https://usps-redelivery-support.xyz/track immediately or your parcel will be returned."
+    )
     response = await async_client.post(
         f"{settings.API_V1_STR}/analyze/message",
-        json={"content": "Please verify your account"},
+        json={"content": message_text, "sender": "alerts@usps-post-service.xyz"},
     )
-    assert response.status_code == 401
+    assert response.status_code == 200
+    report = response.json()
+
+    assert "scan_id" in report
+    assert report["target_type"] == "MESSAGE"
+    assert report["risk_score"] > 0
+    assert report["risk_level"] in ("HIGH RISK", "CRITICAL", "SUSPICIOUS")
+    assert len(report["evidence_items"]) > 0
+
+    # Verify scan is NOT written to database for guests
+    scan_uuid = uuid.UUID(report["scan_id"])
+    async with AsyncSessionLocal() as db:
+        stmt = select(Scan).where(Scan.id == scan_uuid)
+        scan = (await db.execute(stmt)).scalar_one_or_none()
+        assert scan is None, "Guest scans must not be written to the database"
+
+    # Verify invalid session still allows guest scan
+    invalid_auth_resp = await async_client.post(
+        f"{settings.API_V1_STR}/analyze/message",
+        headers={"Authorization": "Bearer expired_session_token"},
+        json={"content": "Hello team, please find the meeting agenda attached."},
+    )
+    assert invalid_auth_resp.status_code == 200
 
 
 @pytest.mark.asyncio

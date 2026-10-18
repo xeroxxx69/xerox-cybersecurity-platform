@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { History, ExternalLink, RefreshCw, Search } from "lucide-react";
-import { getHistory } from "@/services/api";
+import { History, ExternalLink, RefreshCw, Search, Trash2, ShieldAlert } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
+import { getHistory } from "@/services/api";
+import { getGuestHistory, clearGuestHistory } from "@/services/guestStorage";
 import { ScanHistoryItem } from "@/types";
 import {
   Button,
@@ -22,19 +23,30 @@ export const HistoryPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   const fetchHistory = async () => {
-    if (!user) {
-      setHistory([]);
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     try {
-      const data = await getHistory(50);
-      setHistory(data || []);
+      if (user) {
+        const data = await getHistory(50);
+        setHistory(data || []);
+      } else {
+        const localData = getGuestHistory();
+        setHistory(localData);
+      }
     } catch {
-      setHistory([]);
+      if (!user) {
+        setHistory(getGuestHistory());
+      } else {
+        setHistory([]);
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleClearLocal = () => {
+    if (window.confirm("Purge all locally stored guest scan reports from this device?")) {
+      clearGuestHistory();
+      setHistory([]);
     }
   };
 
@@ -99,32 +111,52 @@ export const HistoryPage: React.FC = () => {
           </p>
         </div>
 
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={fetchHistory}
-          disabled={loading}
-          leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />}
-        >
-          REFRESH ARCHIVE
-        </Button>
+        <div className="flex items-center gap-2">
+          {!user && history.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleClearLocal}
+              leftIcon={<Trash2 className="w-3.5 h-3.5 text-slate-400" />}
+            >
+              PURGE LOCAL
+            </Button>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={fetchHistory}
+            disabled={loading}
+            leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />}
+          >
+            REFRESH ARCHIVE
+          </Button>
+        </div>
       </div>
 
-      {!user ? (
-        <div className="rounded-2xl bg-xerox-surface border border-xerox-border p-8 sm:p-10 text-center space-y-4">
-          <History className="w-10 h-10 text-xerox-red mx-auto" />
-          <h2 className="text-xl font-bold text-white">History is an account feature</h2>
-          <p className="text-sm text-slate-400 max-w-xl mx-auto">
-            You can use XEROX without signing in. Sign in or create an account when you want
-            scans and previous reports saved to your personal history.
-          </p>
-          <div className="flex justify-center gap-3">
-            <Link to="/login"><Button variant="primary" size="sm">SIGN IN</Button></Link>
-            <Link to="/register"><Button variant="secondary" size="sm">CREATE ACCOUNT</Button></Link>
-            <Link to="/analyze"><Button variant="outline" size="sm">START A SCAN</Button></Link>
+      {/* Guest Mode Explanatory Notice */}
+      {!user && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-xerox-surface-elevated to-xerox-surface border border-xerox-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono shadow-panel">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-white font-bold">
+              <ShieldAlert className="w-4 h-4 text-xerox-red" />
+              <span>DEVICE-SPECIFIC GUEST ARCHIVE</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                LOCAL ONLY
+              </span>
+            </div>
+            <p className="text-slate-400 font-sans text-xs">
+              Investigations below are stored solely in this browser. To preserve history permanently and access it from any machine, initialize a session.
+            </p>
           </div>
+          <Link
+            to="/login"
+            className="flex-shrink-0 px-3.5 py-2 rounded-xl bg-xerox-red hover:bg-xerox-red-bright text-white font-bold tracking-wider transition-all text-xs text-center shadow-red-glow-sm"
+          >
+            SIGN IN TO SYNC &rarr;
+          </Link>
         </div>
-      ) : (
+      )}
       {/* Filter and Search Bar */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
         {/* Filter Pills */}
@@ -188,6 +220,9 @@ export const HistoryPage: React.FC = () => {
                       {item.target_type}
                     </Badge>
                     <RiskBadge level={item.risk_level} score={item.risk_score} size="sm" />
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-xerox-surface border border-xerox-border text-slate-400">
+                      {user ? "ENCLAVE" : "LOCAL DEVICE"}
+                    </span>
                     <span className="text-[11px] font-mono text-slate-500">
                       {new Date(item.analyzed_at).toLocaleString()}
                     </span>
@@ -219,7 +254,6 @@ export const HistoryPage: React.FC = () => {
           </div>
         )}
       </div>
-      )}
     </div>
   );
 };

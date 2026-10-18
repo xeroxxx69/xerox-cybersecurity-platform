@@ -1,14 +1,18 @@
 import React, { useEffect, useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useSearchParams, useParams, Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { getReport } from "@/services/api";
+import { getGuestReport } from "@/services/guestStorage";
+import { useAuth } from "@/features/auth/AuthContext";
 import { ThreatReport } from "@/types";
 import { AnalysisResult } from "@/components/threat/AnalysisResult";
 import { Button, LoadingState, ErrorState } from "@/components/ui";
 
 export const ReportsPage: React.FC = () => {
   const [searchParams] = useSearchParams();
-  const scanId = searchParams.get("id");
+  const { id: paramId } = useParams();
+  const scanId = paramId || searchParams.get("id");
+  const { user } = useAuth();
   const [report, setReport] = useState<ThreatReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -16,6 +20,15 @@ export const ReportsPage: React.FC = () => {
   useEffect(() => {
     if (!scanId) {
       setError("No scan identifier provided. Please select an investigation from the archive or run a new scan.");
+      return;
+    }
+
+    // Check local guest storage first if unauthenticated
+    const localReport = getGuestReport(scanId);
+    if (!user && localReport) {
+      setReport(localReport);
+      setLoading(false);
+      setError(null);
       return;
     }
 
@@ -27,11 +40,17 @@ export const ReportsPage: React.FC = () => {
         setReport(data);
       })
       .catch((err) => {
-        setError(err.message || "Dossier could not be located in the cryptographic archive.");
-        setReport(null);
+        // If server retrieval failed, try local guest storage as fallback
+        if (localReport) {
+          setReport(localReport);
+          setError(null);
+        } else {
+          setError(err.message || "Dossier could not be located in the cryptographic archive.");
+          setReport(null);
+        }
       })
       .finally(() => setLoading(false));
-  }, [scanId]);
+  }, [scanId, user]);
 
   if (loading) {
     return (

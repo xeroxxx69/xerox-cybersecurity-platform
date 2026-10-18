@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Settings, Shield, User, Cpu } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Settings, Shield, User, Cpu, LogIn } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
 import {
   Card,
@@ -49,33 +50,56 @@ export const SettingsPage: React.FC = () => {
           <CardHeader>
             <CardTitle>
               <User className="w-4 h-4 text-xerox-red" />
-              Authenticated Operator Profile
+              {user ? "Authenticated Operator Profile" : "Guest Operator Profile"}
             </CardTitle>
             <CardDescription>
-              Current cryptographic session and tenant isolation details
+              {user
+                ? "Current cryptographic session and tenant isolation details"
+                : "Unauthenticated guest session — scans stored locally on this machine"}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="p-3.5 rounded-xl bg-xerox-surface-elevated border border-xerox-border-subtle space-y-2 text-xs font-mono">
               <div className="flex justify-between">
-                <span className="text-slate-400">OPERATOR EMAIL:</span>
-                <span className="text-white font-bold">{user?.email || "analyst@xerox.sec"}</span>
+                <span className="text-slate-400">OPERATOR:</span>
+                <span className="text-white font-bold">
+                  {user?.email || "Guest Operator (Unauthenticated)"}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">TENANT ID:</span>
+                <span className="text-slate-400">TENANT ARCHIVE:</span>
                 <span className="text-slate-300 truncate max-w-[180px]">
-                  {user?.id || "0000-tenant-iso"}
+                  {user?.id ? user.id.slice(0, 16) + "..." : "Device LocalStorage Only"}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">SESSION AUTH:</span>
-                <span className="text-emerald-400 font-bold">HTTPONLY COOKIE SECURED</span>
+                <span className={user ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
+                  {user ? "HTTPONLY COOKIE SECURED" : "EPHEMERAL GUEST SESSION"}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">DATA ISOLATION:</span>
-                <span className="text-slate-200">PER-USER STRICT ENFORCED</span>
+                <span className="text-slate-200">
+                  {user ? "PER-USER STRICT ENFORCED" : "DEVICE LOCAL (NO CLOUD UPLOAD)"}
+                </span>
               </div>
             </div>
+
+            {!user && (
+              <div className="pt-2">
+                <Link to="/login" className="block">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-center"
+                    leftIcon={<LogIn className="w-3.5 h-3.5 text-xerox-red" />}
+                  >
+                    AUTHENTICATE TO ENABLE CLOUD ARCHIVE
+                  </Button>
+                </Link>
+              </div>
+            )}
           </CardContent>
         </Card>
 

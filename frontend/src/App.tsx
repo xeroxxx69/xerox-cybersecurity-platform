@@ -23,8 +23,11 @@ export const App: React.FC = () => {
         <MainLayout>
           <Routes>
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            {/* Public Authentication Routes */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+
+            {/* Public Core Application Routes (Accessible to Guests and Authenticated Operators) */}
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/analyze" element={<AnalyzePage />} />
             <Route path="/history" element={<HistoryPage />} />
@@ -32,6 +35,8 @@ export const App: React.FC = () => {
             <Route path="/history/:id" element={<ReportsPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+
+            {/* Fallback */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </MainLayout>

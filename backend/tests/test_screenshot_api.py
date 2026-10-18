@@ -41,14 +41,41 @@ async def create_authenticated_user(async_client: AsyncClient, email_prefix: str
 
 
 @pytest.mark.asyncio
-async def test_unauthenticated_analyze_screenshot_rejected(async_client: AsyncClient):
-    """Accessing /analyze/screenshot without session cookie returns 401."""
-    files = {"file": ("test.png", SAMPLE_PNG, "image/png")}
-    response = await async_client.post(
-        f"{settings.API_V1_STR}/analyze/screenshot",
-        files=files,
+async def test_unauthenticated_guest_screenshot_analysis_succeeds_without_persistence(async_client: AsyncClient):
+    """Guest can submit screenshot for analysis without authentication; scan is not saved to DB."""
+    mock_vision_result = VisionExtractionResult(
+        raw_text="Apple ID Sign in: Enter your Apple ID and password to unlock iCloud. https://apple-verify.support-secure.live",
+        detected_brands=["Apple"],
+        visual_elements=["Login Form", "Password Input", "Brand Logo"],
+        visible_urls=["https://apple-verify.support-secure.live"],
+        provider_name="TesseractOCR+Vision",
+        is_available=True,
     )
-    assert response.status_code == 401
+
+    with patch(
+        "app.analyzers.screenshot.vision.gemini.GeminiVisionProvider.extract",
+        return_value=mock_vision_result,
+    ):
+
+        files = {"file": ("guest_capture.png", SAMPLE_PNG, "image/png")}
+        response = await async_client.post(
+            f"{settings.API_V1_STR}/analyze/screenshot",
+            files=files,
+        )
+        assert response.status_code == 200
+        report = response.json()
+
+        assert "scan_id" in report
+        assert report["target_type"] == "SCREENSHOT"
+        assert report["risk_score"] > 0
+        assert len(report["evidence_items"]) > 0
+
+        # Verify scan is NOT written to database for guests
+        scan_uuid = uuid.UUID(report["scan_id"])
+        async with AsyncSessionLocal() as db:
+            stmt = select(Scan).where(Scan.id == scan_uuid)
+            scan = (await db.execute(stmt)).scalar_one_or_none()
+            assert scan is None, "Guest scans must not be written to the database"
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import {
   Globe,
   Mail,
@@ -18,6 +18,8 @@ import { ScanProgress } from "@/components/threat/ScanProgress";
 import { AnalysisResult } from "@/components/threat/AnalysisResult";
 import { Button, Card, Input, Textarea, Badge } from "@/components/ui";
 import { scanUrl, scanMessage, scanScreenshot, scanFile } from "@/services/api";
+import { useAuth } from "@/features/auth/AuthContext";
+import { saveGuestScan } from "@/services/guestStorage";
 
 type ActiveTab = "URL" | "MESSAGE" | "SCREENSHOT" | "FILE";
 
@@ -72,6 +74,7 @@ function createSampleDocumentFile(name: string): File {
 }
 
 export const AnalyzePage: React.FC = () => {
+  const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const initialType = (searchParams.get("type")?.toUpperCase() as ActiveTab) || "URL";
   const initialTarget = searchParams.get("target") || "";
@@ -233,9 +236,12 @@ export const AnalyzePage: React.FC = () => {
       }
 
       setReport(finalReport);
+      if (!user) {
+        saveGuestScan(finalReport);
+      }
     } catch (err: any) {
       clearInterval(stageInterval);
-      setScanError(err.message || "Security analysis failed. Please verify credentials and connectivity.");
+      setScanError(err.message || "Security analysis failed. Please verify connectivity and target validity.");
       setSentinelState("IDLE");
     } finally {
       setScanning(false);
@@ -297,6 +303,22 @@ export const AnalyzePage: React.FC = () => {
 
       {/* Target Submission Workspace Card */}
       <Card variant="default" className="shadow-panel space-y-6">
+        {/* Guest Session Indicator Banner */}
+        {!user && (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl bg-xerox-surface-elevated border border-xerox-border text-xs font-mono gap-2">
+            <div className="flex items-center gap-2 text-slate-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+              <span>GUEST OPERATOR MODE // Scans saved locally to this browser</span>
+            </div>
+            <Link
+              to="/login"
+              className="text-red-400 hover:text-red-300 font-bold tracking-wider inline-flex items-center gap-1"
+            >
+              SIGN IN FOR CLOUD ARCHIVE &rarr;
+            </Link>
+          </div>
+        )}
+
         {/* Mode Selector Tabs */}
         <div className="flex flex-wrap items-center justify-between border-b border-xerox-border-subtle pb-4 gap-3">
           <div className="flex flex-wrap items-center gap-2">
