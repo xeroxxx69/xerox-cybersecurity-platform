@@ -11,7 +11,7 @@ import {
   EmptyState,
 } from "@/components/ui";
 
-type FilterType = "ALL" | "URL" | "MESSAGE" | "HIGH_RISK" | "MEDIUM_RISK" | "LOW_RISK";
+type FilterType = "ALL" | "URL" | "MESSAGE" | "SCREENSHOT" | "FILE" | "HIGH_RISK" | "MEDIUM_RISK" | "LOW_RISK";
 
 export const HistoryPage: React.FC = () => {
   const [history, setHistory] = useState<ScanHistoryItem[]>([]);
@@ -50,6 +50,10 @@ export const HistoryPage: React.FC = () => {
           return item.target_type === "URL";
         case "MESSAGE":
           return item.target_type === "MESSAGE";
+        case "SCREENSHOT":
+          return item.target_type === "SCREENSHOT";
+        case "FILE":
+          return item.target_type === "FILE";
         case "HIGH_RISK":
           return item.risk_level === "HIGH RISK" || item.risk_level === "CRITICAL";
         case "MEDIUM_RISK":
@@ -67,6 +71,8 @@ export const HistoryPage: React.FC = () => {
     { id: "ALL", label: "All Scans" },
     { id: "URL", label: "URLs" },
     { id: "MESSAGE", label: "Messages" },
+    { id: "SCREENSHOT", label: "Screenshots" },
+    { id: "FILE", label: "Files" },
     { id: "HIGH_RISK", label: "High Risk" },
     { id: "MEDIUM_RISK", label: "Medium Risk" },
     { id: "LOW_RISK", label: "Low Risk" },

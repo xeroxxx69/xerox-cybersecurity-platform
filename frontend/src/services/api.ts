@@ -5,7 +5,7 @@ import {
 } from "@/types";
 import { getStoredToken } from "@/features/auth/tokenStorage";
 
-const API_BASE = import.meta.env.VITE_API_URL || "/api/v1";
+import { getApiBaseUrl } from "./apiConfig";
 
 function getAuthHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
   const headers: Record<string, string> = { ...extraHeaders };
@@ -22,19 +22,26 @@ export async function checkBackendHealth(): Promise<{
   version: string;
   database?: string;
   redis?: Record<string, string>;
+  baseUrl?: string;
 }> {
-  const res = await fetch(`${API_BASE}/health`, {
-    headers: getAuthHeaders(),
-    credentials: "include",
-  });
-  if (!res.ok) {
-    throw new Error(`Health check failed: ${res.statusText}`);
+  const baseUrl = getApiBaseUrl();
+  try {
+    const res = await fetch(`${baseUrl}/health`, {
+      headers: getAuthHeaders(),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      throw new Error(`Health check returned HTTP ${res.status}: ${res.statusText}`);
+    }
+    const data = await res.json();
+    return { ...data, baseUrl };
+  } catch (err: any) {
+    throw new Error(`Backend unavailable at ${baseUrl}: ${err.message || "Connection failed"}`);
   }
-  return res.json();
 }
 
 export async function scanUrl(url: string): Promise<ThreatReport> {
-  const res = await fetch(`${API_BASE}/analyze/url`, {
+  const res = await fetch(`${getApiBaseUrl()}/analyze/url`, {
     method: "POST",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
     credentials: "include",
@@ -53,7 +60,7 @@ export async function scanMessage(
   subject?: string,
   sender?: string
 ): Promise<ThreatReport> {
-  const res = await fetch(`${API_BASE}/analyze/message`, {
+  const res = await fetch(`${getApiBaseUrl()}/analyze/message`, {
     method: "POST",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
     credentials: "include",
@@ -75,7 +82,7 @@ export async function scanScreenshot(file: File): Promise<ThreatReport> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch(`${API_BASE}/analyze/screenshot`, {
+  const res = await fetch(`${getApiBaseUrl()}/analyze/screenshot`, {
     method: "POST",
     headers: getAuthHeaders(),
     credentials: "include",
@@ -88,8 +95,25 @@ export async function scanScreenshot(file: File): Promise<ThreatReport> {
   return res.json();
 }
 
+export async function scanFile(file: File): Promise<ThreatReport> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${getApiBaseUrl()}/analyze/file`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    credentials: "include",
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: "File scan failed" }));
+    throw new Error(err.detail || "File scan failed");
+  }
+  return res.json();
+}
+
 export async function getHistory(limit: number = 50): Promise<ScanHistoryItem[]> {
-  const res = await fetch(`${API_BASE}/analyze/history?limit=${limit}`, {
+  const res = await fetch(`${getApiBaseUrl()}/analyze/history?limit=${limit}`, {
     headers: getAuthHeaders(),
     credentials: "include",
   });
@@ -100,7 +124,7 @@ export async function getHistory(limit: number = 50): Promise<ScanHistoryItem[]>
 }
 
 export async function getReport(scanId: string): Promise<ThreatReport> {
-  const res = await fetch(`${API_BASE}/analyze/${scanId}`, {
+  const res = await fetch(`${getApiBaseUrl()}/analyze/${scanId}`, {
     headers: getAuthHeaders(),
     credentials: "include",
   });
@@ -111,7 +135,7 @@ export async function getReport(scanId: string): Promise<ThreatReport> {
 }
 
 export async function getStats(): Promise<StatsSummary> {
-  const res = await fetch(`${API_BASE}/analyze/stats/summary`, {
+  const res = await fetch(`${getApiBaseUrl()}/analyze/stats/summary`, {
     headers: getAuthHeaders(),
     credentials: "include",
   });
@@ -136,7 +160,7 @@ export async function submitFeedback(feedback: FeedbackSubmission): Promise<{
   suggested_label?: string;
   submitted_at: string;
 }> {
-  const res = await fetch(`${API_BASE}/feedback`, {
+  const res = await fetch(`${getApiBaseUrl()}/feedback`, {
     method: "POST",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
     credentials: "include",

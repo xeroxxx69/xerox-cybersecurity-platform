@@ -57,6 +57,7 @@ class ThreatIntelCache:
     """Redis-backed cache service for threat intelligence lookups."""
 
     KEY_PREFIX = "xerox:intel:url:"
+    FILE_KEY_PREFIX = "xerox:intel:file:"
 
     def __init__(self, client: Optional[aioredis.Redis] = None, ttl: int = settings.CACHE_TTL_SECONDS):
         self._client = client
@@ -69,6 +70,9 @@ class ThreatIntelCache:
 
     def _make_key(self, url_hash: str) -> str:
         return f"{self.KEY_PREFIX}{url_hash}"
+
+    def _make_file_key(self, file_hash: str) -> str:
+        return f"{self.FILE_KEY_PREFIX}{file_hash.lower().strip()}"
 
     async def get(self, url_hash: str) -> Optional[ThreatIntelResult]:
         """Retrieves cached ThreatIntelResult by URL hash. Returns None on miss or error."""
@@ -106,3 +110,41 @@ class ThreatIntelCache:
         except Exception as exc:
             logger.warning(f"Redis set error for hash {url_hash[:12]}: {exc}")
             return False
+
+    async def get_file(self, file_hash: str) -> Optional[ThreatIntelResult]:
+        """Retrieves cached ThreatIntelResult by file SHA-256 hash."""
+        try:
+            client = await self._get_client()
+            if client is None:
+                return None
+
+            key = self._make_file_key(file_hash)
+            raw = await client.get(key)
+            if not raw:
+                return None
+
+            data = json.loads(raw)
+            result = ThreatIntelResult(**data)
+            result.cached = True
+            logger.info(f"File threat intel cache HIT for hash {file_hash[:12]}")
+            return result
+        except Exception as exc:
+            logger.warning(f"Redis get_file error for hash {file_hash[:12]}: {exc}")
+            return None
+
+    async def set_file(self, file_hash: str, result: ThreatIntelResult) -> bool:
+        """Stores file ThreatIntelResult in Redis with TTL."""
+        try:
+            client = await self._get_client()
+            if client is None:
+                return False
+
+            key = self._make_file_key(file_hash)
+            payload = result.model_dump(mode="json")
+            await client.set(key, json.dumps(payload), ex=self.ttl)
+            logger.info(f"File threat intel cached for hash {file_hash[:12]} (TTL: {self.ttl}s)")
+            return True
+        except Exception as exc:
+            logger.warning(f"Redis set_file error for hash {file_hash[:12]}: {exc}")
+            return False
+

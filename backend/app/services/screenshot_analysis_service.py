@@ -133,26 +133,25 @@ class ScreenshotAnalysisService:
                 if not url_heuristics.is_private_network:
                     cached_intel = await self.cache.get(norm_url.url_hash)
                     if cached_intel:
-                        malicious_count = cached_intel.malicious_votes
-                        suspicious_count = cached_intel.suspicious_votes
+                        malicious_count = cached_intel.malicious_count
+                        suspicious_count = cached_intel.suspicious_count
                     else:
-                        live_intel = await self.threat_intel_provider.lookup_url(norm_url.canonical_url)
+                        live_intel = await self.threat_intel_provider.lookup_url(norm_url.normalized_url)
                         if live_intel:
                             await self.cache.set(norm_url.url_hash, live_intel)
-                            malicious_count = live_intel.malicious_votes
-                            suspicious_count = live_intel.suspicious_votes
+                            malicious_count = live_intel.malicious_count
+                            suspicious_count = live_intel.suspicious_count
 
                 url_score_result = calculate_risk_score(
-                    heuristic_result=url_heuristics,
-                    malicious_votes=malicious_count,
-                    suspicious_votes=suspicious_count,
-                    threat_intel_status="SUCCESS" if (malicious_count or suspicious_count) else "NONE",
+                    findings=url_heuristics.findings,
+                    threat_intel_malicious_count=malicious_count,
+                    threat_intel_suspicious_count=suspicious_count,
                 )
 
-                if url_score_result.risk_score > max_url_score:
-                    max_url_score = url_score_result.risk_score
+                if url_score_result.score > max_url_score:
+                    max_url_score = url_score_result.score
 
-                if url_score_result.risk_score >= 70:
+                if url_score_result.score >= 70:
                     has_high_risk_url = True
 
             except Exception as exc:

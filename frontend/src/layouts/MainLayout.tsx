@@ -40,6 +40,24 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     { label: "Settings", href: "/settings", icon: Settings },
   ];
 
+  const isAuthRoute =
+    location.pathname === "/login" ||
+    location.pathname === "/register" ||
+    location.pathname.endsWith("/login") ||
+    location.pathname.endsWith("/register");
+
+  if (isAuthRoute) {
+    return (
+      <ToastProvider>
+        <div className="min-h-screen bg-xerox-bg text-slate-100 flex flex-col justify-center font-sans selection:bg-xerox-red selection:text-white">
+          <main className="w-full flex-1 flex items-center justify-center p-4 sm:p-6">
+            {children}
+          </main>
+        </div>
+      </ToastProvider>
+    );
+  }
+
   return (
     <ToastProvider>
       <div className="min-h-screen bg-xerox-bg text-slate-100 flex flex-col font-sans selection:bg-xerox-red selection:text-white">

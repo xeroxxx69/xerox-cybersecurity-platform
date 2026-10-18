@@ -14,6 +14,7 @@ class TargetType(str, Enum):
     MESSAGE = "MESSAGE"
     EMAIL = "EMAIL"
     SCREENSHOT = "SCREENSHOT"
+    FILE = "FILE"
 
 class EvidenceCategory(str, Enum):
     INFRASTRUCTURE = "INFRASTRUCTURE"
@@ -80,6 +81,14 @@ class TechnicalMetadata(BaseModel):
     detected_brands: List[str] = []
     extracted_urls: List[str] = []
     social_engineering_flags: List[str] = []
+    file_name: Optional[str] = None
+    file_size_bytes: Optional[int] = None
+    file_hash_sha256: Optional[str] = None
+    file_hash_md5: Optional[str] = None
+    mime_type: Optional[str] = None
+    is_executable: Optional[bool] = None
+    threat_intel_summary: Optional[str] = None
+    threat_intel_permalink: Optional[str] = None
 
 class ThreatReport(BaseModel):
     scan_id: str

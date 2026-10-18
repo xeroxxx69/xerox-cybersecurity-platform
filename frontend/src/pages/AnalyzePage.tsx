@@ -17,9 +17,59 @@ import { SentinelRobotHUD } from "@/components/sentinel/SentinelRobotHUD";
 import { ScanProgress } from "@/components/threat/ScanProgress";
 import { AnalysisResult } from "@/components/threat/AnalysisResult";
 import { Button, Card, Input, Textarea, Badge } from "@/components/ui";
-import { scanUrl, scanMessage, scanScreenshot } from "@/services/api";
+import { scanUrl, scanMessage, scanScreenshot, scanFile } from "@/services/api";
 
 type ActiveTab = "URL" | "MESSAGE" | "SCREENSHOT" | "FILE";
+
+function createSampleScreenshotFile(name: string): File {
+  const canvas = document.createElement("canvas");
+  canvas.width = 640;
+  canvas.height = 400;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    ctx.fillStyle = "#18181b";
+    ctx.fillRect(0, 0, 640, 400);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 20px sans-serif";
+    ctx.fillText("Microsoft Account Sign-in", 40, 60);
+    ctx.font = "14px sans-serif";
+    ctx.fillStyle = "#94a3b8";
+    ctx.fillText("Enter your email, phone, or Skype", 40, 100);
+    ctx.fillStyle = "#27272a";
+    ctx.fillRect(40, 120, 400, 36);
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(40, 180, 100, 36);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 14px sans-serif";
+    ctx.fillText("Sign in", 65, 203);
+    ctx.fillStyle = "#f87171";
+    ctx.font = "12px sans-serif";
+    ctx.fillText("Security Notice: Urgent Verification Required", 40, 260);
+  }
+  const dataUrl = canvas.toDataURL("image/png");
+  const byteString = atob(dataUrl.split(",")[1]);
+  const ab = new ArrayBuffer(byteString.length);
+  const ia = new Uint8Array(ab);
+  for (let i = 0; i < byteString.length; i++) {
+    ia[i] = byteString.charCodeAt(i);
+  }
+  return new File([ab], name, { type: "image/png" });
+}
+
+function createSampleDocumentFile(name: string): File {
+  if (name.endsWith(".pdf")) {
+    const pdfContent = "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n4 0 obj\n<< /Length 44 >>\nstream\nBT /F1 12 Tf 100 700 Td (Xerox Test Document) Tj ET\nendstream\nendobj\nxref\n0 5\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000206 00000 n \ntrailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n300\n%%EOF\n";
+    return new File([pdfContent], name, { type: "application/pdf" });
+  } else if (name.endsWith(".eml")) {
+    const emlContent = "From: alert@usps-post-service.xyz\nReply-To: phisher@scam-hub.top\nTo: victim@example.com\nSubject: Urgent Delivery Notice\nDate: Mon, 14 Sep 2026 12:00:00 +0000\nContent-Type: text/plain\n\nYour shipment has an unpaid fee. Please verify: https://usps-redelivery-support.xyz\n";
+    return new File([emlContent], name, { type: "message/rfc822" });
+  } else {
+    const textContent = name.endsWith(".docm")
+      ? "Rem Sub Document_Open()\nShell \"powershell.exe -enc aWV4 ...\"\nEnd Sub\n"
+      : "XEROX Suspicious Script / Document Test File\nhttps://malicious-test-link.xyz\n";
+    return new File([textContent], name, { type: "text/plain" });
+  }
+}
 
 export const AnalyzePage: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -36,6 +86,7 @@ export const AnalyzePage: React.FC = () => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const genericFileInputRef = useRef<HTMLInputElement | null>(null);
   const [scanning, setScanning] = useState(false);
   const [currentStage, setCurrentStage] = useState(0);
   const [report, setReport] = useState<ThreatReport | null>(null);
@@ -52,6 +103,20 @@ export const AnalyzePage: React.FC = () => {
     if (targetParam) setInputValue(targetParam);
   }, [searchParams]);
 
+  const handleTabSwitch = (tab: ActiveTab) => {
+    setActiveTab(tab);
+    setReport(null);
+    setUploadError(null);
+    setScanError(null);
+    setInputValue("");
+    setSelectedFile(null);
+    setFileName("");
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+  };
+
   const handleFileChange = (file: File | null) => {
     setUploadError(null);
     setScanError(null);
@@ -62,6 +127,25 @@ export const AnalyzePage: React.FC = () => {
       return;
     }
 
+    if (activeTab === "FILE") {
+      const allowedExts = [".pdf", ".docx", ".docm", ".eml", ".txt", ".zip", ".csv", ".json", ".ps1", ".bat"];
+      const lowerName = file.name.toLowerCase();
+      const hasValidExt = allowedExts.some((ext) => lowerName.endsWith(ext));
+      if (!hasValidExt) {
+        setUploadError("Unsupported format. Please upload PDF, DOCX, DOCM, EML, TXT, or ZIP.");
+        return;
+      }
+      if (file.size > 15 * 1024 * 1024) {
+        setUploadError("File size exceeds the 15 MB maximum limit.");
+        return;
+      }
+      setSelectedFile(file);
+      setFileName(file.name);
+      setPreviewUrl(null);
+      return;
+    }
+
+    // Screenshot tab
     const validMimes = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
     if (!validMimes.includes(file.type.toLowerCase())) {
       setUploadError("Unsupported format. Please upload a PNG, JPEG, or WEBP image.");
@@ -88,6 +172,9 @@ export const AnalyzePage: React.FC = () => {
     setScanError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
+    }
+    if (genericFileInputRef.current) {
+      genericFileInputRef.current.value = "";
     }
   };
 
@@ -123,8 +210,13 @@ export const AnalyzePage: React.FC = () => {
           throw new Error("Please select or drop an image file (PNG, JPEG, WEBP) to inspect.");
         }
         finalReport = await scanScreenshot(selectedFile);
+      } else if (activeTab === "FILE") {
+        if (!selectedFile) {
+          throw new Error("Please select or drop a file (PDF, DOCX, DOCM, EML, ZIP, TXT) to inspect.");
+        }
+        finalReport = await scanFile(selectedFile);
       } else {
-        throw new Error("File static analysis module is currently isolated for sandboxing. Please test URL, Message, or Screenshot analysis.");
+        throw new Error("Unsupported target type.");
       }
 
       clearInterval(stageInterval);
@@ -209,10 +301,7 @@ export const AnalyzePage: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between border-b border-xerox-border-subtle pb-4 gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => {
-                setActiveTab("URL");
-                setReport(null);
-              }}
+              onClick={() => handleTabSwitch("URL")}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-mono font-bold tracking-wide transition-all ${
                 activeTab === "URL"
                   ? "bg-xerox-red/15 text-red-400 border border-xerox-red/40 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
@@ -224,10 +313,7 @@ export const AnalyzePage: React.FC = () => {
             </button>
 
             <button
-              onClick={() => {
-                setActiveTab("MESSAGE");
-                setReport(null);
-              }}
+              onClick={() => handleTabSwitch("MESSAGE")}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-mono font-bold tracking-wide transition-all ${
                 activeTab === "MESSAGE"
                   ? "bg-xerox-red/15 text-red-400 border border-xerox-red/40 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
@@ -239,10 +325,7 @@ export const AnalyzePage: React.FC = () => {
             </button>
 
             <button
-              onClick={() => {
-                setActiveTab("SCREENSHOT");
-                setReport(null);
-              }}
+              onClick={() => handleTabSwitch("SCREENSHOT")}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-mono font-bold tracking-wide transition-all ${
                 activeTab === "SCREENSHOT"
                   ? "bg-xerox-red/15 text-red-400 border border-xerox-red/40 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
@@ -254,10 +337,7 @@ export const AnalyzePage: React.FC = () => {
             </button>
 
             <button
-              onClick={() => {
-                setActiveTab("FILE");
-                setReport(null);
-              }}
+              onClick={() => handleTabSwitch("FILE")}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-mono font-bold tracking-wide transition-all ${
                 activeTab === "FILE"
                   ? "bg-xerox-red/15 text-red-400 border border-xerox-red/40 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
@@ -404,24 +484,67 @@ export const AnalyzePage: React.FC = () => {
 
           {activeTab === "FILE" && (
             <div className="space-y-4">
-              <div className="p-8 border-2 border-dashed border-xerox-border rounded-2xl bg-xerox-surface-elevated/40 hover:border-xerox-border-highlight text-center space-y-3 cursor-pointer">
+              <input
+                type="file"
+                ref={genericFileInputRef}
+                className="hidden"
+                accept=".pdf,.docx,.docm,.eml,.txt,.zip,.csv,.json,.ps1,.bat"
+                onChange={(e) => handleFileChange(e.target.files?.[0] || null)}
+              />
+
+              <div
+                onClick={() => genericFileInputRef.current?.click()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                    handleFileChange(e.dataTransfer.files[0]);
+                  }
+                }}
+                className="p-8 border-2 border-dashed border-xerox-border rounded-2xl bg-xerox-surface-elevated/40 hover:border-xerox-red/50 hover:bg-xerox-surface-elevated/70 text-center space-y-3 cursor-pointer transition-all"
+              >
                 <div className="w-12 h-12 rounded-2xl bg-xerox-surface border border-xerox-border mx-auto flex items-center justify-center text-slate-400">
                   <UploadCloud className="w-6 h-6 text-xerox-red" />
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm font-bold text-white">
-                    {fileName ? fileName : "Drag & drop file here, or select sample below"}
+                    {fileName ? fileName : "Drag & drop file here, or click to browse"}
                   </p>
                   <p className="text-xs text-slate-500 font-mono">
-                    Supported: PDF, DOCX, DOCM, EML, ZIP. Static metadata extraction only.
+                    Supported: PDF, DOCX, DOCM, EML, ZIP, TXT (Max 15MB). Safe static inspection only.
                   </p>
                 </div>
                 {fileName && (
-                  <Badge variant="safe" size="sm" icon={<FileCheck className="w-3.5 h-3.5" />}>
-                    LOADED: {fileName}
-                  </Badge>
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                    <Badge variant="safe" size="sm" icon={<FileCheck className="w-3.5 h-3.5" />}>
+                      LOADED: {fileName}
+                    </Badge>
+                    {selectedFile && (
+                      <span className="text-[11px] font-mono text-slate-400">
+                        ({(selectedFile.size / 1024).toFixed(1)} KB)
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleClearFile}
+                      className="p-1 rounded bg-red-950 hover:bg-red-900 text-red-300 transition-colors ml-1"
+                      title="Clear file"
+                    >
+                      <XIcon className="w-3 h-3" />
+                    </button>
+                  </div>
                 )}
               </div>
+
+              {uploadError && (
+                <div className="p-3 rounded-xl bg-red-950/40 border border-red-800/60 text-red-400 text-xs font-mono">
+                  {uploadError}
+                </div>
+              )}
             </div>
           )}
 
@@ -435,13 +558,27 @@ export const AnalyzePage: React.FC = () => {
                 key={idx}
                 type="button"
                 onClick={() => {
-                  if (activeTab === "SCREENSHOT" || activeTab === "FILE") {
+                  setReport(null);
+                  setUploadError(null);
+                  setScanError(null);
+                  if (activeTab === "SCREENSHOT") {
                     setFileName(sample.val);
                     setInputValue(sample.val);
+                    const fixtureFile = createSampleScreenshotFile(sample.val);
+                    setSelectedFile(fixtureFile);
+                    setPreviewUrl(URL.createObjectURL(fixtureFile));
+                  } else if (activeTab === "FILE") {
+                    setFileName(sample.val);
+                    setInputValue(sample.val);
+                    const fixtureFile = createSampleDocumentFile(sample.val);
+                    setSelectedFile(fixtureFile);
+                    setPreviewUrl(null);
                   } else {
                     setInputValue(sample.val);
+                    setSelectedFile(null);
+                    setPreviewUrl(null);
+                    setFileName("");
                   }
-                  setReport(null);
                 }}
                 className="px-2.5 py-1 rounded-lg bg-xerox-surface-elevated hover:bg-slate-800 text-[11px] font-mono text-slate-300 border border-xerox-border transition-colors truncate max-w-[280px]"
               >

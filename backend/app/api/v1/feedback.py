@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -41,10 +41,11 @@ async def submit_feedback(
             detail="You are not authorized to submit feedback for another user's scan report.",
         )
 
+    feedback_text = req.get_effective_feedback()
     feedback_entry = Feedback(
         user_id=current_user.id,
         scan_id=req.scan_id,
-        feedback=req.feedback.strip(),
+        feedback=feedback_text,
     )
     db.add(feedback_entry)
     await db.commit()

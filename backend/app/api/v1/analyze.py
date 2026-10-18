@@ -16,7 +16,9 @@ from app.schemas.threat import (
 from app.services.url_analysis_service import URLAnalysisService
 from app.services.message_analysis_service import MessageAnalysisService
 from app.services.screenshot_analysis_service import ScreenshotAnalysisService
+from app.services.file_analysis_service import FileAnalysisService
 from app.analyzers.screenshot.validator import ImageValidationError
+from app.analyzers.file.validator import FileValidationError
 
 router = APIRouter()
 
@@ -140,6 +142,50 @@ async def analyze_screenshot_endpoint(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Screenshot security analysis failed: {str(exc)}",
+        )
+
+
+@router.post(
+    "/file",
+    response_model=ThreatReport,
+    status_code=status.HTTP_200_OK,
+    summary="Analyze suspicious file for security threats (PDF, Office, EML, ZIP, Text)",
+)
+async def analyze_file_endpoint(
+    file: UploadFile = File(..., description="Suspicious file upload (PDF, DOCX, DOCM, EML, ZIP, TXT, max 15MB)"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ThreatReport:
+    """Performs isolated, safe static structural inspection and threat intelligence lookup
+    on untrusted file uploads. Non-executable storage, zero code execution, and strict tenant isolation.
+    """
+    try:
+        file_bytes = await file.read()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to read uploaded file: {str(exc)}",
+        )
+
+    service = FileAnalysisService()
+    try:
+        report = await service.analyze_file(
+            file_bytes=file_bytes,
+            declared_mime=file.content_type,
+            client_filename=file.filename,
+            user_id=current_user.id,
+            db=db,
+        )
+        return report
+    except FileValidationError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"File security analysis failed: {str(exc)}",
         )
 
 

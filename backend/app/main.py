@@ -54,6 +54,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=r"^https://[a-zA-Z0-9-]+\.github\.io$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -69,7 +70,9 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         content={"detail": "Internal server error"},
     )
     origin = request.headers.get("origin")
-    if origin and (origin in settings.CORS_ORIGINS or "*" in settings.CORS_ORIGINS):
+    allowed_origins = {o.rstrip("/") for o in settings.CORS_ORIGINS}
+    is_github_io = bool(origin and origin.startswith("https://") and origin.endswith(".github.io"))
+    if origin and (origin.rstrip("/") in allowed_origins or origin in settings.CORS_ORIGINS or "*" in settings.CORS_ORIGINS or is_github_io):
         req_headers = request.headers.get("access-control-request-headers")
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"

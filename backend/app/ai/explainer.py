@@ -52,7 +52,10 @@ class ThreatExplainer:
                 f"Format as JSON: {{\"layman_verdict\": \"...\", \"executive_summary\": \"...\"}}"
             )
 
-            response = client.models.generate_content(
+            import asyncio
+
+            response = await asyncio.to_thread(
+                client.models.generate_content,
                 model=self.model,
                 contents=prompt,
                 config=types.GenerateContentConfig(

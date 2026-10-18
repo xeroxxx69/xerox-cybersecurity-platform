@@ -1,53 +1,97 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ShieldCheck, Lock, Mail, ArrowRight, AlertTriangle } from "lucide-react";
-import { useAuth } from "@/features/auth/AuthContext";
+import {
+  useAuth,
+  validateEmail,
+  validateRegisterPassword,
+  validateConfirmPassword,
+} from "@/features/auth";
 import { Input, Button, Card } from "@/components/ui";
 
 export const RegisterPage: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{
+    email?: string;
+    password?: string;
+    confirmPassword?: string;
+  }>({});
+  const [serverError, setServerError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const { register } = useAuth();
   const navigate = useNavigate();
 
+  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEmail(e.target.value);
+    if (fieldErrors.email) {
+      setFieldErrors((prev) => ({ ...prev, email: undefined }));
+    }
+    if (serverError) {
+      setServerError(null);
+    }
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPassword(e.target.value);
+    if (fieldErrors.password) {
+      setFieldErrors((prev) => ({ ...prev, password: undefined }));
+    }
+    if (fieldErrors.confirmPassword && confirmPassword === e.target.value) {
+      setFieldErrors((prev) => ({ ...prev, confirmPassword: undefined }));
+    }
+    if (serverError) {
+      setServerError(null);
+    }
+  };
+
+  const handleConfirmPasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setConfirmPassword(e.target.value);
+    if (fieldErrors.confirmPassword) {
+      setFieldErrors((prev) => ({ ...prev, confirmPassword: undefined }));
+    }
+    if (serverError) {
+      setServerError(null);
+    }
+  };
+
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setError(null);
+    setServerError(null);
 
-    const form = e.currentTarget;
-    const emailInput = form.elements.namedItem("email") as HTMLInputElement | null;
-    const passwordInput = form.elements.namedItem("password") as HTMLInputElement | null;
-    const confirmPasswordInput = form.elements.namedItem("confirmPassword") as HTMLInputElement | null;
+    const emailError = validateEmail(email);
+    const passwordError = validateRegisterPassword(password);
+    const confirmPasswordError = validateConfirmPassword(password, confirmPassword);
 
-    const finalEmail = (email || emailInput?.value || "").trim();
-    const finalPassword = password || passwordInput?.value || "";
-    const finalConfirmPassword = confirmPassword || confirmPasswordInput?.value || "";
-
-    if (!finalEmail || !finalPassword) {
-      setError("Please provide both email and password.");
+    if (emailError || passwordError || confirmPasswordError) {
+      setFieldErrors({
+        email: emailError || undefined,
+        password: passwordError || undefined,
+        confirmPassword: confirmPasswordError || undefined,
+      });
       return;
     }
 
-    if (finalPassword !== finalConfirmPassword) {
-      setError("Passwords do not match. Please verify.");
-      return;
-    }
-
-    if (finalPassword.length < 8) {
-      setError("Password must be at least 8 characters long.");
-      return;
-    }
-
+    setFieldErrors({});
     setLoading(true);
+
     try {
-      await register(finalEmail, finalPassword);
+      await register(email.trim(), password);
       navigate("/dashboard", { replace: true });
     } catch (err: any) {
-      setError(err.message || "Registration failed. Please try again.");
+      const msg = err.message || "Registration failed. Please try again.";
+      if (
+        msg.toLowerCase().includes("already registered") ||
+        msg.toLowerCase().includes("already exists")
+      ) {
+        const duplicateMsg = "This email is already registered. Please sign in instead.";
+        setFieldErrors((prev) => ({ ...prev, email: duplicateMsg }));
+        setServerError(duplicateMsg);
+      } else {
+        setServerError(msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -61,56 +105,58 @@ export const RegisterPage: React.FC = () => {
             <ShieldCheck className="w-8 h-8 text-xerox-red" />
           </div>
           <h1 className="text-2xl font-extrabold text-white tracking-tight">
-            Register Analyst Identity
+            Create your XEROX account
           </h1>
           <p className="text-xs text-slate-400 font-mono">
-            Create an isolated tenant account for authenticated threat telemetry
+            Create your account to access automated threat analysis
           </p>
         </div>
 
-        {error && (
+        {serverError && (
           <div
             role="alert"
             className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-mono flex items-center gap-2.5"
           >
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-            <span>{error}</span>
+            <span>{serverError}</span>
           </div>
         )}
 
-        <form onSubmit={handleRegister} className="space-y-4">
+        <form onSubmit={handleRegister} noValidate className="space-y-4">
           <Input
-            label="OPERATIONAL EMAIL"
+            label="Email"
             type="email"
             name="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
+            onChange={handleEmailChange}
+            error={fieldErrors.email}
             autoComplete="email"
-            placeholder="analyst@domain.gov"
+            placeholder="name@company.com"
             leftIcon={<Mail className="w-4 h-4" />}
           />
 
           <Input
-            label="SECURITY KEY / PASSWORD"
+            label="Password"
             type="password"
             name="password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
+            onChange={handlePasswordChange}
+            error={fieldErrors.password}
+            showPasswordToggle
             autoComplete="new-password"
             placeholder="Minimum 8 characters"
             leftIcon={<Lock className="w-4 h-4" />}
-            helperText="Requires at least 8 characters, 1 number, and 1 uppercase or special character."
+            helperText="Use at least 8 characters, including a number and an uppercase letter or special character."
           />
 
           <Input
-            label="CONFIRM PASSWORD"
+            label="Confirm password"
             type="password"
             name="confirmPassword"
             value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
+            onChange={handleConfirmPasswordChange}
+            error={fieldErrors.confirmPassword}
+            showPasswordToggle
             autoComplete="new-password"
             placeholder="Repeat password"
             leftIcon={<Lock className="w-4 h-4" />}
@@ -121,10 +167,10 @@ export const RegisterPage: React.FC = () => {
             variant="primary"
             fullWidth
             loading={loading}
-            loadingText="PROVISIONING ACCOUNT..."
+            loadingText="Creating account..."
             rightIcon={<ArrowRight className="w-4 h-4" />}
           >
-            CREATE OPERATIONAL ACCOUNT
+            Create account
           </Button>
         </form>
 
@@ -134,10 +180,11 @@ export const RegisterPage: React.FC = () => {
             to="/login"
             className="text-red-400 hover:text-red-300 transition-colors font-semibold"
           >
-            Authenticate here
+            Sign in
           </Link>
         </div>
       </Card>
     </div>
   );
 };
+

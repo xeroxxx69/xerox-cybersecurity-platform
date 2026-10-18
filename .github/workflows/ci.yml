@@ -49,6 +49,12 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
+      - name: Run frontend tests
+        working-directory: ./frontend
+        run: |
+          node --experimental-strip-types tests/test_api_config.mjs
+          node --experimental-strip-types tests/test_validation_unit.mjs
+
       - name: Build frontend
         working-directory: ./frontend
         env:

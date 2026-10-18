@@ -21,18 +21,40 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:4173",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:4173",
         "http://127.0.0.1:3000",
+        "https://xeroxxx69.github.io",
         "https://ghoshankan429-sys.github.io",
     ]
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",") if i.strip()]
-        return v
+        origins: List[str] = []
+        if isinstance(v, str):
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                try:
+                    origins = [i.strip().rstrip("/") for i in json.loads(v) if isinstance(i, str)]
+                except Exception:
+                    origins = [i.strip().rstrip("/") for i in v.strip("[]").replace('"', "").replace("'", "").split(",") if i.strip()]
+            else:
+                origins = [i.strip().rstrip("/") for i in v.split(",") if i.strip()]
+        elif isinstance(v, list):
+            origins = [i.rstrip("/") for i in v if isinstance(i, str)]
+        else:
+            return v
+
+        # Ensure canonical GitHub Pages origins are always recognized
+        for default_origin in ["https://xeroxxx69.github.io", "https://ghoshankan429-sys.github.io"]:
+            if default_origin not in origins:
+                origins.append(default_origin)
+        return origins
 
     # Security & Auth
     SECRET_KEY: str = "xerox_development_secret_key_change_in_production_32_chars_min"
@@ -88,6 +110,10 @@ class Settings(BaseSettings):
     MAX_IMAGE_WIDTH: int = 4096
     MAX_IMAGE_HEIGHT: int = 4096
     ALLOWED_IMAGE_TYPES: List[str] = ["image/png", "image/jpeg", "image/webp"]
+
+    # File Upload Storage & Validation
+    FILE_STORAGE_DIR: str = "storage/files"
+    MAX_FILE_SIZE_BYTES: int = 15 * 1024 * 1024  # 15 MB
 
     # Workers & Auditing
     ASYNC_AUDIT_LOGGING: bool = True

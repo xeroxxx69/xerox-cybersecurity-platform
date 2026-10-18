@@ -15,3 +15,8 @@ class ThreatIntelProvider(ABC):
     async def lookup_url(self, normalized_url: str) -> ThreatIntelResult:
         """Queries the provider for reputation and detection telemetry on a URL."""
         pass
+
+    @abstractmethod
+    async def lookup_file_hash(self, sha256_hash: str) -> ThreatIntelResult:
+        """Queries the provider for reputation and detection telemetry on a file hash."""
+        pass

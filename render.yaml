@@ -22,7 +22,7 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: CORS_ORIGINS
-        value: '["https://ghoshankan429-sys.github.io","http://localhost:3000"]'
+        value: '["https://xeroxxx69.github.io","https://ghoshankan429-sys.github.io","http://localhost:3000"]'
       - key: COOKIE_SECURE
         value: "true"
       - key: COOKIE_SAMESITE

@@ -59,3 +59,5 @@ Thumbs.db
 # Screenshot & File Storage (Never commit user uploads)
 /storage/
 /backend/storage/
+
+.vercel

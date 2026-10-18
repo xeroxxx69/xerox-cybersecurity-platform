@@ -79,7 +79,7 @@ def test_production_environment_cookie_and_security_defaults():
 
 @pytest.mark.asyncio
 async def test_health_alias_endpoints(async_client: AsyncClient):
-    """Verify that both /health and /api/health return healthy 200 responses."""
+    """Verify that /health, /api/health, and /api/v1/health return healthy 200 responses."""
     r1 = await async_client.get("/health")
     assert r1.status_code == 200
     assert r1.json()["status"] == "healthy"
@@ -88,25 +88,55 @@ async def test_health_alias_endpoints(async_client: AsyncClient):
     assert r2.status_code == 200
     assert r2.json()["status"] == "healthy"
 
+    r3 = await async_client.get("/api/v1/health")
+    assert r3.status_code == 200
+    assert r3.json()["status"] == "healthy"
+
+
+@pytest.mark.asyncio
+async def test_cors_preflight_for_production_origin(async_client: AsyncClient):
+    """Verify that OPTIONS preflight requests from https://xeroxxx69.github.io receive valid CORS headers."""
+    resp = await async_client.options(
+        "/api/v1/auth/login",
+        headers={
+            "Origin": "https://xeroxxx69.github.io",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "Content-Type",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("access-control-allow-origin") == "https://xeroxxx69.github.io"
+    assert resp.headers.get("access-control-allow-credentials") == "true"
+
+
+def test_cors_origins_always_includes_xerox_production():
+    """Verify that Settings.CORS_ORIGINS always guarantees inclusion of xeroxxx69.github.io."""
+    s = Settings(CORS_ORIGINS=["http://custom.example.com"])
+    assert "https://xeroxxx69.github.io" in s.CORS_ORIGINS
+    assert "http://custom.example.com" in s.CORS_ORIGINS
+
+    s2 = Settings(CORS_ORIGINS="https://another-domain.com")
+    assert "https://xeroxxx69.github.io" in s2.CORS_ORIGINS
+
 
 @pytest.mark.asyncio
 async def test_unhandled_exception_preserves_cors():
-    """Verify that an unhandled 500 exception returns JSON with CORS headers intact."""
+    """Verify that an unhandled 500 exception returns JSON with CORS headers intact for xeroxxx69."""
     from httpx import ASGITransport, AsyncClient as CleanClient
     from app.main import app
 
     # Temporarily register a test route that raises an unhandled error
-    @app.get("/api/test-crash")
+    @app.get("/api/test-crash-cors")
     async def crash_endpoint():
         raise RuntimeError("Simulated unhandled internal database failure")
 
     async with CleanClient(transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test") as client:
         resp = await client.get(
-            "/api/test-crash",
-            headers={"Origin": "https://ghoshankan429-sys.github.io"},
+            "/api/test-crash-cors",
+            headers={"Origin": "https://xeroxxx69.github.io"},
         )
         assert resp.status_code == 500
-        assert resp.headers.get("access-control-allow-origin") == "https://ghoshankan429-sys.github.io"
+        assert resp.headers.get("access-control-allow-origin") == "https://xeroxxx69.github.io"
         assert resp.headers.get("access-control-allow-credentials") == "true"
         data = resp.json()
         assert data["detail"] == "Internal server error"

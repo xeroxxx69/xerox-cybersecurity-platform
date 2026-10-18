@@ -56,12 +56,15 @@ class GeminiVisionProvider(VisionProvider):
                 "Do not invent text or URLs not present in the image. Do not include markdown formatting or backticks."
             )
 
+            import asyncio
+
             image_part = types.Part.from_bytes(
                 data=image_bytes,
                 mime_type=mime_type,
             )
 
-            response = client.models.generate_content(
+            response = await asyncio.to_thread(
+                client.models.generate_content,
                 model=self.model,
                 contents=[image_part, "Extract all OCR text and visual elements."],
                 config=types.GenerateContentConfig(

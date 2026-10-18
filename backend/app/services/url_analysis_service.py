@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.analyzers.url.normalizer import normalize_url
 from app.analyzers.url.engine import analyze_url_heuristics
 from app.analyzers.url.scorer import calculate_risk_score, _generate_recommended_actions
+from app.ai.explainer import ThreatExplainer
 from app.cache.redis_client import ThreatIntelCache
 from app.threat_intel.base import ThreatIntelProvider
 from app.threat_intel.virustotal import VirusTotalProvider
@@ -41,9 +42,11 @@ class URLAnalysisService:
         self,
         threat_intel_provider: Optional[ThreatIntelProvider] = None,
         cache: Optional[ThreatIntelCache] = None,
+        explainer: Optional[ThreatExplainer] = None,
     ):
         self.threat_intel_provider = threat_intel_provider or VirusTotalProvider()
         self.cache = cache or ThreatIntelCache()
+        self.explainer = explainer or ThreatExplainer()
 
     async def analyze_url(
         self,
@@ -124,6 +127,16 @@ class URLAnalysisService:
             threat_intel_suspicious_count=suspicious_count,
         )
 
+        # AI Explanation Synthesis with Deterministic Fallback
+        exec_summary, layman_verdict = await self.explainer.explain(
+            findings=findings,
+            risk_score=assessment.score,
+            risk_level=assessment.level,
+            fallback_summary=assessment.executive_summary,
+            fallback_verdict=assessment.layman_verdict,
+            context_notes=f"URL: {norm_url.raw_url}",
+        )
+
         now_dt = get_monotonic_utc_now()
         # 5. Database Persistence (Strict user_id tenant isolation)
         scan = Scan(
@@ -161,8 +174,8 @@ class URLAnalysisService:
                 "risk_score": assessment.score,
                 "verdict": assessment.level.value,
                 "confidence_score": assessment.confidence,
-                "executive_summary": assessment.executive_summary,
-                "layman_verdict": assessment.layman_verdict,
+                "executive_summary": exec_summary,
+                "layman_verdict": layman_verdict,
                 "findings_count": len(findings),
                 "threat_intel_status": threat_intel.status.value if threat_intel else "SKIPPED",
                 "is_cached": threat_intel.cached if threat_intel else False,
@@ -186,8 +199,8 @@ class URLAnalysisService:
             risk_score=assessment.score,
             risk_level=assessment.level,
             confidence_score=assessment.confidence,
-            executive_summary=assessment.executive_summary,
-            layman_verdict=assessment.layman_verdict,
+            executive_summary=exec_summary,
+            layman_verdict=layman_verdict,
             evidence_items=findings,
             recommended_actions=assessment.recommended_actions,
             technical_metadata=heuristic_result.metadata,
@@ -221,10 +234,16 @@ class URLAnalysisService:
                 "executive_summary",
                 f"Analysis completed with verdict {s.verdict} (Risk Score: {s.risk_score}/100).",
             )
+            target_type_val = TargetType.URL
+            try:
+                target_type_val = TargetType(s.input_type)
+            except Exception:
+                pass
+
             items.append(
                 ScanHistoryItem(
                     scan_id=str(s.id),
-                    target_type=TargetType.URL if s.input_type == "URL" else TargetType.URL,
+                    target_type=target_type_val,
                     defanged_target=defanged,
                     risk_level=RiskLevel(s.verdict),
                     risk_score=s.risk_score,
@@ -289,9 +308,15 @@ class URLAnalysisService:
         meta_data = details.get("technical_metadata", {})
         tech_metadata = TechnicalMetadata(**meta_data) if meta_data else TechnicalMetadata()
 
+        target_type_val = TargetType.URL
+        try:
+            target_type_val = TargetType(scan.input_type)
+        except Exception:
+            pass
+
         return ThreatReport(
             scan_id=str(scan.id),
-            target_type=TargetType.URL if scan.input_type == "URL" else TargetType.URL,
+            target_type=target_type_val,
             raw_target=raw_target,
             defanged_target=defanged_target,
             risk_score=scan.risk_score,

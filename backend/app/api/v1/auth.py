@@ -113,7 +113,7 @@ async def login_user(
         login_rate_limiter.record_failure(rate_limit_key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password.",
+            detail="Incorrect email or password.",
         )
 
     # Reset failure counter on success

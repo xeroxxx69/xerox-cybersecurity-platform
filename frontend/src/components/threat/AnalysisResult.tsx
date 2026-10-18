@@ -14,6 +14,7 @@ import { RiskGauge } from "./RiskGauge";
 import { EvidenceDrawer } from "./EvidenceDrawer";
 import { RecommendedActions } from "./RecommendedActions";
 import { RiskBadge, Badge, Button, Modal, useToast } from "@/components/ui";
+import { submitFeedback } from "@/services/api";
 
 export interface AnalysisResultProps {
   report: ThreatReport;
@@ -24,6 +25,7 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ report }) => {
   const [feedbackSent, setFeedbackSent] = useState<"UP" | "DOWN" | null>(null);
   const [falsePositiveModalOpen, setFalsePositiveModalOpen] = useState(false);
   const [fpReason, setFpReason] = useState("");
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const toast = useToast();
 
   const handleCopyTarget = () => {
@@ -33,20 +35,43 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ report }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleFeedback = (type: "UP" | "DOWN") => {
+  const handleFeedback = async (type: "UP" | "DOWN") => {
+    if (feedbackSent) return;
     setFeedbackSent(type);
-    toast.success(
-      type === "UP"
-        ? "Telemetry feedback registered. Thank you!"
-        : "Feedback registered. Flagged for heuristic calibration."
-    );
+    try {
+      await submitFeedback({
+        scan_id: report.scan_id,
+        is_accurate: type === "UP",
+        user_notes: type === "UP" ? "User confirmed accurate analysis" : "User flagged analysis as inaccurate",
+      });
+      toast.success(
+        type === "UP"
+          ? "Telemetry feedback registered. Thank you!"
+          : "Feedback registered. Flagged for heuristic calibration."
+      );
+    } catch (err) {
+      toast.warning("Feedback stored locally (could not sync with backend)");
+    }
   };
 
-  const handleSubmitFalsePositive = (e: React.FormEvent) => {
+  const handleSubmitFalsePositive = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFalsePositiveModalOpen(false);
-    toast.info("False positive report submitted to analyst queue.");
-    setFpReason("");
+    setSubmittingFeedback(true);
+    try {
+      await submitFeedback({
+        scan_id: report.scan_id,
+        is_accurate: false,
+        user_notes: fpReason,
+        suggested_label: "FALSE_POSITIVE",
+      });
+      setFalsePositiveModalOpen(false);
+      toast.info("False positive report submitted to analyst queue.");
+      setFpReason("");
+    } catch (err) {
+      toast.error("Failed to submit false positive report.");
+    } finally {
+      setSubmittingFeedback(false);
+    }
   };
 
   return (
@@ -247,12 +272,18 @@ export const AnalysisResult: React.FC<AnalysisResultProps> = ({ report }) => {
               variant="outline"
               size="sm"
               type="button"
+              disabled={submittingFeedback}
               onClick={() => setFalsePositiveModalOpen(false)}
             >
               CANCEL
             </Button>
-            <Button variant="primary" size="sm" type="submit">
-              SUBMIT REPORT
+            <Button
+              variant="primary"
+              size="sm"
+              type="submit"
+              disabled={submittingFeedback}
+            >
+              {submittingFeedback ? "SUBMITTING..." : "SUBMIT REPORT"}
             </Button>
           </div>
         </form>

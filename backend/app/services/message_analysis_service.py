@@ -12,6 +12,7 @@ from app.analyzers.message.scorer import calculate_message_risk_score, MessageRi
 from app.analyzers.url.normalizer import normalize_url
 from app.analyzers.url.engine import analyze_url_heuristics
 from app.analyzers.url.scorer import calculate_risk_score
+from app.ai.explainer import ThreatExplainer
 from app.cache.redis_client import ThreatIntelCache
 from app.threat_intel.base import ThreatIntelProvider
 from app.threat_intel.virustotal import VirusTotalProvider
@@ -42,9 +43,11 @@ class MessageAnalysisService:
         self,
         threat_intel_provider: Optional[ThreatIntelProvider] = None,
         cache: Optional[ThreatIntelCache] = None,
+        explainer: Optional[ThreatExplainer] = None,
     ):
         self.threat_intel_provider = threat_intel_provider or VirusTotalProvider()
         self.cache = cache or ThreatIntelCache()
+        self.explainer = explainer or ThreatExplainer()
 
     async def analyze_message(
         self,
@@ -176,6 +179,16 @@ class MessageAnalysisService:
             has_correlation=has_correlation,
         )
 
+        # AI Explanation Synthesis with Deterministic Fallback
+        exec_summary, layman_verdict = await self.explainer.explain(
+            findings=combined_findings,
+            risk_score=assessment.score,
+            risk_level=assessment.level,
+            fallback_summary=assessment.executive_summary,
+            fallback_verdict=assessment.layman_verdict,
+            context_notes=f"Message subject: {norm_msg.subject or 'None'}, sender: {norm_msg.sender or 'None'}",
+        )
+
         now_dt = get_monotonic_utc_now()
         # 7. Database Persistence (Strict user_id tenant isolation)
         scan = Scan(
@@ -226,8 +239,8 @@ class MessageAnalysisService:
                 "risk_score": assessment.score,
                 "verdict": assessment.level.value,
                 "confidence_score": assessment.confidence,
-                "executive_summary": assessment.executive_summary,
-                "layman_verdict": assessment.layman_verdict,
+                "executive_summary": exec_summary,
+                "layman_verdict": layman_verdict,
                 "findings_count": len(combined_findings),
                 "extracted_urls_count": len(iocs.urls),
                 "extracted_iocs": {
@@ -257,8 +270,8 @@ class MessageAnalysisService:
             risk_score=assessment.score,
             risk_level=assessment.level,
             confidence_score=assessment.confidence,
-            executive_summary=assessment.executive_summary,
-            layman_verdict=assessment.layman_verdict,
+            executive_summary=exec_summary,
+            layman_verdict=layman_verdict,
             evidence_items=combined_findings,
             recommended_actions=assessment.recommended_actions,
             technical_metadata=metadata,

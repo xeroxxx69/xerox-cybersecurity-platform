@@ -154,7 +154,7 @@ async def test_login_incorrect_password(async_client: AsyncClient):
         json={"email": email, "password": "WrongPassword999!"},
     )
     assert login_res.status_code == 401
-    assert "Invalid email or password" in login_res.json()["detail"]
+    assert "Incorrect email or password" in login_res.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -165,7 +165,7 @@ async def test_login_unknown_account_enumeration_protection(async_client: AsyncC
         json={"email": "nonexistent_account@xerox.sec", "password": "AnyPassword123!"},
     )
     assert login_res.status_code == 401
-    assert "Invalid email or password" in login_res.json()["detail"]
+    assert "Incorrect email or password" in login_res.json()["detail"]
 
 
 @pytest.mark.asyncio

@@ -5,7 +5,7 @@ export type RiskLevel =
   | "HIGH RISK"
   | "CRITICAL";
 
-export type TargetType = "URL" | "MESSAGE" | "EMAIL" | "SCREENSHOT";
+export type TargetType = "URL" | "MESSAGE" | "EMAIL" | "SCREENSHOT" | "FILE";
 
 export type EvidenceCategory =
   | "INFRASTRUCTURE"
@@ -77,6 +77,14 @@ export interface TechnicalMetadata {
   detected_brands: string[];
   extracted_urls: string[];
   social_engineering_flags: string[];
+  file_name?: string;
+  file_size_bytes?: number;
+  file_hash_sha256?: string;
+  file_hash_md5?: string;
+  mime_type?: string;
+  is_executable?: boolean;
+  threat_intel_summary?: string;
+  threat_intel_permalink?: string;
 }
 
 export interface ThreatReport {
