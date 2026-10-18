@@ -28,7 +28,13 @@ jobs:
 
       - name: Run Pytest
         run: |
-          python -m pytest -v
+          python -m pytest -v 2>&1 | tee pytest.log || {
+            echo "## Pytest Output" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat pytest.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            exit 1
+          }
 
   frontend-build:
     name: Frontend Build & Typecheck
