@@ -19,6 +19,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
+import { useBackendHealth } from "@/features/health/useBackendHealth";
 import { ToastProvider, NavigationItem, StatusIndicator, IconButton } from "@/components/ui";
 
 interface MainLayoutProps {
@@ -30,6 +31,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { user, logout } = useAuth();
+  const health = useBackendHealth(20000);
 
   const navItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -96,12 +98,47 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
               </Link>
             </div>
 
-            {/* Middle: System Operational Status Beacon */}
-            <div className="hidden md:flex items-center gap-4 px-4 py-1.5 rounded-full bg-xerox-surface/80 border border-xerox-border-subtle">
-              <StatusIndicator status="online" label="DEFENSIVE SHIELD OPERATIONAL" size="sm" />
+            {/* Middle: System Operational Status Beacon (Dynamic Enclave Telemetry) */}
+            <Link
+              to="/settings"
+              title={
+                health.status === "online"
+                  ? `Backend Enclave Online (${health.latencyMs}ms) at ${health.baseUrl}`
+                  : health.status === "degraded"
+                  ? `Backend Enclave Degraded: ${health.errorDetail || "Database/Cache check warning"}`
+                  : health.status === "offline"
+                  ? `Backend Enclave Offline: ${health.errorDetail || "Unreachable"}. Click to configure API endpoint.`
+                  : `Connecting to ${health.baseUrl}...`
+              }
+              className="hidden md:flex items-center gap-3 px-3.5 py-1.5 rounded-full bg-xerox-surface/80 border border-xerox-border-subtle hover:border-xerox-border transition-all cursor-pointer group"
+            >
+              <StatusIndicator
+                status={
+                  health.status === "online"
+                    ? "online"
+                    : health.status === "degraded"
+                    ? "degraded"
+                    : health.status === "offline"
+                    ? "offline"
+                    : "scanning"
+                }
+                label={
+                  health.status === "online"
+                    ? `ENCLAVE ONLINE ${health.latencyMs !== null ? `(${health.latencyMs}ms)` : ""}`
+                    : health.status === "degraded"
+                    ? "ENCLAVE DEGRADED"
+                    : health.status === "offline"
+                    ? "ENCLAVE OFFLINE"
+                    : "VERIFYING ENCLAVE..."
+                }
+                size="sm"
+              />
               <span className="text-slate-600 font-mono text-xs">|</span>
-              <span className="text-[11px] font-mono text-slate-400">PHASE 1 // HEURISTIC CORE</span>
-            </div>
+              <span className="text-[11px] font-mono text-slate-400 group-hover:text-slate-200 transition-colors">
+                HEURISTIC CORE
+              </span>
+            </Link>
+
 
             {/* Right: Quick Action & User Profile */}
             <div className="flex items-center gap-3">

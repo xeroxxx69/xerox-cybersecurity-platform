@@ -17,12 +17,31 @@ async def test_health_endpoints(async_client):
     res_alias = await async_client.get("/api/health")
     assert res_alias.status_code == 200
     assert res_alias.json()["status"] == "healthy"
+    assert "checks" in res_alias.json()
 
     res_v1 = await async_client.get(f"{settings.API_V1_STR}/health")
     assert res_v1.status_code == 200
     data = res_v1.json()
     assert data["status"] == "healthy"
     assert data["service"] == "XEROX Autonomous Cybersecurity Engine"
+    assert data["checks"]["liveness"] == "ok"
+    assert data["checks"]["readiness"] == "ok"
+    assert data["checks"]["database"] == "ok"
+
+    res_live = await async_client.get(f"{settings.API_V1_STR}/health/live")
+    assert res_live.status_code == 200
+    assert res_live.json()["checks"]["liveness"] == "ok"
+
+    res_ready = await async_client.get(f"{settings.API_V1_STR}/health/ready")
+    assert res_ready.status_code == 200
+    assert res_ready.json()["checks"]["database"] == "ok"
+
+    res_live_root = await async_client.get("/health/live")
+    assert res_live_root.status_code == 200
+
+    res_ready_root = await async_client.get("/health/ready")
+    assert res_ready_root.status_code == 200
+
 
 
 def test_package_structure_and_imports():

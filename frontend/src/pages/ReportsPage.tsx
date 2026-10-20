@@ -45,10 +45,11 @@ export const ReportsPage: React.FC = () => {
           setReport(localReport);
           setError(null);
         } else {
-          setError(err.message || "Dossier could not be located in the cryptographic archive.");
+          setError(err?.userMessage || err?.message || "Dossier could not be located in the cryptographic archive.");
           setReport(null);
         }
       })
+
       .finally(() => setLoading(false));
   }, [scanId, user]);
 

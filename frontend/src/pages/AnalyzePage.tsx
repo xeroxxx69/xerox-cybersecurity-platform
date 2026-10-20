@@ -241,9 +241,10 @@ export const AnalyzePage: React.FC = () => {
       }
     } catch (err: any) {
       clearInterval(stageInterval);
-      setScanError(err.message || "Security analysis failed. Please verify connectivity and target validity.");
+      setScanError(err?.userMessage || err?.message || "Security analysis failed. Please verify connectivity and target validity.");
       setSentinelState("IDLE");
     } finally {
+
       setScanning(false);
     }
   };

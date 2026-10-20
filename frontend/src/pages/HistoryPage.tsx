@@ -21,9 +21,11 @@ export const HistoryPage: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState<FilterType>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchHistory = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       if (user) {
         const data = await getHistory(50);
@@ -32,7 +34,9 @@ export const HistoryPage: React.FC = () => {
         const localData = getGuestHistory();
         setHistory(localData);
       }
-    } catch {
+    } catch (err: any) {
+      const msg = err?.userMessage || err?.message || "Failed to load account scan archive from security enclave.";
+      setLoadError(msg);
       if (!user) {
         setHistory(getGuestHistory());
       } else {
@@ -42,6 +46,7 @@ export const HistoryPage: React.FC = () => {
       setLoading(false);
     }
   };
+
 
   const handleClearLocal = () => {
     if (window.confirm("Purge all locally stored guest scan reports from this device?")) {
@@ -157,7 +162,29 @@ export const HistoryPage: React.FC = () => {
           </Link>
         </div>
       )}
+
+      {/* Enclave Synchronization Failure Alert */}
+      {loadError && (
+
+        <div className="p-4 rounded-2xl bg-red-950/40 border border-red-800/80 text-xs font-mono shadow-panel space-y-2">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2 text-red-400 font-bold">
+              <ShieldAlert className="w-4 h-4 text-xerox-red flex-shrink-0" />
+              <span>ENCLAVE ARCHIVE RETRIEVAL FAILED</span>
+            </div>
+            <Link
+              to="/settings"
+              className="text-xs text-red-300 hover:text-white underline tracking-wider"
+            >
+              Verify Endpoint &rarr;
+            </Link>
+          </div>
+          <p className="text-red-200 font-sans text-xs">{loadError}</p>
+        </div>
+      )}
+
       {/* Filter and Search Bar */}
+
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
         {/* Filter Pills */}
         <div className="flex flex-wrap items-center gap-1.5">

@@ -90,13 +90,43 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 async def health_alias():
     db_res = await check_db_health()
     db_status = db_res.get("status", "unknown")
+    is_healthy = db_status == "connected"
     return {
-        "status": "healthy" if db_status == "connected" else "degraded",
+        "status": "healthy" if is_healthy else "degraded",
         "service": "XEROX Cybersecurity Core",
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
         "database": db_status,
+        "checks": {
+            "liveness": "ok",
+            "readiness": "ok" if is_healthy else "failed",
+            "database": "ok" if is_healthy else "failed",
+        },
     }
+
+
+@app.get("/health/live")
+async def health_live_root():
+    return {
+        "status": "ok",
+        "service": "XEROX Cybersecurity Core",
+        "checks": {"liveness": "ok"},
+    }
+
+
+@app.get("/health/ready")
+async def health_ready_root():
+    db_res = await check_db_health()
+    is_ok = db_res.get("status") == "connected"
+    res = {
+        "status": "ok" if is_ok else "degraded",
+        "service": "XEROX Cybersecurity Core",
+        "checks": {"database": "ok" if is_ok else "failed"},
+    }
+    if not is_ok:
+        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=res)
+    return res
+
 
 
 @app.get("/", response_model=RootResponse)

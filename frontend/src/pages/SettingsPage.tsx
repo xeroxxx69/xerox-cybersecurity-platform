@@ -1,6 +1,17 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { Settings, Shield, User, Cpu, LogIn } from "lucide-react";
+import {
+  Settings,
+  Shield,
+  User,
+  Cpu,
+  LogIn,
+  Server,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
+
 import { useAuth } from "@/features/auth/AuthContext";
 import {
   Card,
@@ -12,6 +23,13 @@ import {
   StatusIndicator,
   useToast,
 } from "@/components/ui";
+import {
+  getApiBaseUrl,
+  getApiDiagnostics,
+  setCustomApiUrl,
+  validateApiUrl,
+} from "@/services/apiConfig";
+import { checkBackendHealth, BackendHealthResult } from "@/services/api";
 
 export const SettingsPage: React.FC = () => {
   const { user } = useAuth();
@@ -20,6 +38,56 @@ export const SettingsPage: React.FC = () => {
   const [deepScanEnabled, setDeepScanEnabled] = useState(true);
   const [autoDefangEnabled, setAutoDefangEnabled] = useState(true);
   const sessionEnclaveActive = true;
+
+  // Backend Enclave API State
+  const [customUrlInput, setCustomUrlInput] = useState(getApiBaseUrl());
+  const [healthTesting, setHealthTesting] = useState(false);
+  const [healthResult, setHealthResult] = useState<BackendHealthResult | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+
+  const diagnostics = getApiDiagnostics();
+
+  const handleTestHealth = async () => {
+    setHealthTesting(true);
+    setHealthResult(null);
+    setHealthError(null);
+    try {
+      const res = await checkBackendHealth();
+      setHealthResult(res);
+      toast.success(`Enclave responded in ${res.latencyMs}ms (${res.status})`);
+    } catch (err: any) {
+      const msg = err?.userMessage || err?.message || "Enclave endpoint unreachable";
+      setHealthError(msg);
+      toast.error(`Health check failed: ${msg}`);
+    } finally {
+      setHealthTesting(false);
+    }
+  };
+
+  const handleSaveApiUrl = () => {
+    const trimmed = customUrlInput.trim();
+    const validation = validateApiUrl(trimmed || getApiBaseUrl());
+    if (!validation.isValid) {
+      toast.error(validation.error || "Invalid API URL");
+      return;
+    }
+    const result = setCustomApiUrl(trimmed || null);
+    if (!result.isValid) {
+      toast.error(result.error || "Failed to save API URL");
+      return;
+    }
+    toast.success("Enclave Base URL updated. Probing health...");
+    handleTestHealth();
+  };
+
+  const handleResetApiUrl = () => {
+    setCustomApiUrl(null);
+    const defaultUrl = getApiBaseUrl();
+    setCustomUrlInput(defaultUrl);
+    setHealthResult(null);
+    setHealthError(null);
+    toast.info("Reset to default configuration.");
+  };
 
   const handleSaveSettings = () => {
     toast.success("Defensive preferences saved to analyst profile");
@@ -43,6 +111,90 @@ export const SettingsPage: React.FC = () => {
           SAVE CONFIGURATION
         </Button>
       </div>
+
+      {/* Backend Security Enclave & API Gateway Configuration */}
+      <Card variant="alert" className="border-red-900/50">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-red-400">
+              <Server className="w-4 h-4 text-xerox-red" />
+              Backend Security Enclave & API Gateway
+            </CardTitle>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleTestHealth}
+              disabled={healthTesting}
+              leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${healthTesting ? "animate-spin" : ""}`} />}
+            >
+              TEST ENCLAVE CONNECTIVITY
+            </Button>
+          </div>
+          <CardDescription>
+            Configure the target FastAPI analysis enclave endpoint. When running on GitHub Pages, an HTTPS backend is required.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <label htmlFor="settings-api-url" className="text-xs font-mono text-slate-300 block">
+              Active Enclave Base URL:
+            </label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                id="settings-api-url"
+                type="text"
+                value={customUrlInput}
+                onChange={(e) => setCustomUrlInput(e.target.value)}
+                placeholder="https://your-backend.up.railway.app/api/v1"
+                className="flex-1 bg-xerox-surface-elevated border border-xerox-border rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-xerox-red"
+              />
+              <Button type="button" variant="primary" size="sm" onClick={handleSaveApiUrl}>
+                SAVE URL
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={handleResetApiUrl}>
+                RESET DEFAULT
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-500 pt-1">
+              <span>Source: <strong className="text-slate-300">{diagnostics.source}</strong></span>
+              <span>Environment: <strong className="text-slate-300">{diagnostics.environment}</strong></span>
+            </div>
+          </div>
+
+          {/* Health Check Result Card */}
+          {healthResult && (
+            <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-xs font-mono space-y-1 text-emerald-300">
+              <div className="flex items-center gap-2 font-bold text-emerald-400">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>ENCLAVE ONLINE & RESPONDING</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  {healthResult.latencyMs}ms
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-300 grid grid-cols-1 sm:grid-cols-2 gap-1 pt-1">
+                <span>Service: {healthResult.service} v{healthResult.version}</span>
+                <span>Database: <strong className="text-emerald-400">{healthResult.database || "connected"}</strong></span>
+                <span>Cache: <strong className="text-emerald-400">{healthResult.cache || "connected"}</strong></span>
+                {healthResult.correlationId && (
+                  <span>Request ID: {healthResult.correlationId.slice(0, 16)}...</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Health Check Error Card */}
+          {healthError && (
+            <div className="p-3.5 rounded-xl bg-red-950/40 border border-red-500/40 text-xs font-mono space-y-1 text-red-300">
+              <div className="flex items-center gap-2 font-bold text-red-400">
+                <AlertCircle className="w-4 h-4" />
+                <span>SECURITY ENCLAVE OFFLINE OR UNREACHABLE</span>
+              </div>
+              <p className="text-[11px] text-red-200 font-sans">{healthError}</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Analyst Identity & Session */}

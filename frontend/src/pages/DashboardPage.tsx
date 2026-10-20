@@ -46,23 +46,34 @@ export const DashboardPage: React.FC = () => {
   const [stats, setStats] = useState<StatsSummary>(DEFAULT_STATS);
   const [recentScans, setRecentScans] = useState<ScanHistoryItem[]>([]);
   const [quickUrl, setQuickUrl] = useState("");
+  const [syncWarning, setSyncWarning] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadData() {
+      setSyncWarning(null);
       if (user) {
         try {
           const [statsData, historyData] = await Promise.all([
-            getStats().catch(() => null),
+            getStats().catch((err) => {
+              setSyncWarning(err?.userMessage || "Enclave telemetry sync failed. Displaying local device statistics.");
+              return null;
+            }),
             getHistory(5).catch(() => null),
           ]);
           if (statsData) {
             setStats(statsData);
+          } else {
+            setStats(getGuestStats());
           }
           if (historyData) {
             setRecentScans(historyData);
+          } else {
+            setRecentScans(getGuestHistory().slice(0, 5));
           }
         } catch {
-          // preserve current state
+          setSyncWarning("Security enclave synchronization offline. Using local device cache.");
+          setStats(getGuestStats());
+          setRecentScans(getGuestHistory().slice(0, 5));
         }
       } else {
         // Load guest stats and guest history from local device storage
@@ -74,6 +85,7 @@ export const DashboardPage: React.FC = () => {
     }
     loadData();
   }, [user]);
+
 
   const handleQuickUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,7 +126,28 @@ export const DashboardPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Telemetry Sync Warning Alert */}
+      {syncWarning && user && (
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-amber-950/30 border border-amber-800/60 text-xs font-mono gap-3 shadow-panel">
+          <div className="flex items-center gap-3 text-amber-200">
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <div>
+              <span className="font-bold">TELEMETRY SYNC DEGRADED: </span>
+              <span className="text-amber-300/80">{syncWarning}</span>
+            </div>
+          </div>
+          <Link
+            to="/settings"
+            className="text-amber-400 hover:text-white font-bold tracking-wider inline-flex items-center gap-1.5 flex-shrink-0"
+          >
+            CONFIGURE API ENCLAVE &rarr;
+          </Link>
+        </div>
+      )}
+
       {/* Guest Mode Telemetry Notice */}
+
       {!user && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl bg-gradient-to-r from-xerox-surface-elevated to-xerox-surface border border-xerox-border text-xs font-mono gap-3 shadow-panel">
           <div className="flex items-center gap-3 text-slate-300">

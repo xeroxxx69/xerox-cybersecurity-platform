@@ -144,9 +144,10 @@ export const LoginPage: React.FC = () => {
       setPingDetail(`Healthy (${res.service || "XEROX API"} v${res.version || "1.0"})`);
     } catch (err: any) {
       setPingStatus("offline");
-      setPingDetail(err.message || "Endpoint unreachable");
+      setPingDetail(err?.userMessage || err?.message || "Endpoint unreachable");
     }
   };
+
 
   const handleSaveBackendUrl = () => {
     const trimmed = customUrlInput.trim();
