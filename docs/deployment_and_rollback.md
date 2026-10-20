@@ -31,17 +31,56 @@
    - Under Service Settings > **Networking**, click **Generate Domain** or map a custom domain.
    - Note down the generated domain (e.g., `https://web-production-xxxx.up.railway.app`).
 
-### B. Deployment Verification & Smoke Testing
+### B. Deploying to Render (Free Web Service)
+Render is a recommended free backend hosting platform for the XEROX FastAPI backend.
+
+#### Option 1: Render Blueprint (Zero-Config 1-Click Setup)
+1. Log in to [Render](https://render.com).
+2. Click **New +** > **Blueprint**.
+3. Connect your repository: `xeroxxx69/xerox-cybersecurity-platform`.
+4. Render will detect [`render.yaml`](file:///E:/Xerox/render.yaml) and automatically configure:
+   - **Service Name**: `xerox-backend`
+   - **Runtime**: `Python`
+   - **Root Directory**: `backend`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+   - **Health Check Path**: `/health/live`
+   - **Database**: Optional free PostgreSQL (`xerox-db`)
+5. Click **Apply**. Render will build and deploy the container on a free `*.onrender.com` URL with automatic TLS/HTTPS.
+
+#### Option 2: Manual Web Service Setup on Render
+If deploying without a Blueprint:
+1. Click **New +** > **Web Service**.
+2. Connect the `xeroxxx69/xerox-cybersecurity-platform` repository.
+3. Configure the service settings:
+   - **Root Directory**: `backend`
+   - **Runtime**: `Python`
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+   - **Instance Type**: `Free` (0.1 CPU, 512 MB RAM)
+   - **Health Check Path**: `/health/live`
+4. Add Environment Variables:
+   - `ENVIRONMENT` = `production`
+   - `SECRET_KEY` = `<random-32-char-string>`
+   - `CORS_ORIGINS` = `["https://xeroxxx69.github.io"]`
+   - `COOKIE_SECURE` = `true`
+   - `COOKIE_SAMESITE` = `none`
+   - `DATABASE_URL` = *(Optional: attach Render PostgreSQL URL or leave unset to use SQLite)*
+5. Click **Create Web Service**. Note the assigned URL: `https://<your-service>.onrender.com`.
+
+### C. Deployment Verification & Smoke Testing
 Run the automated end-to-end smoke test script against the deployed backend:
 ```bash
 node tests/integration_auth_test.mjs https://<your-backend-domain>/api/v1
 ```
 The script validates:
-- Endpoint readiness at `/health` and `/api/v1/health`
+- Endpoint readiness at `/health/live`, `/health/ready`, and `/api/v1/health`
 - Database connectivity
 - CORS preflight response for `Origin: https://xeroxxx69.github.io`
-- Analyst registration, duplicate rejection, and credential verification
-- Session token issuance and protected endpoint access (`/api/v1/auth/me`)
+- Threat analysis endpoints (`POST /api/v1/analyze/url`)
+- Analyst registration, credential verification, and session token issuance
+- Isolation of authenticated history records
+
 
 ---
 

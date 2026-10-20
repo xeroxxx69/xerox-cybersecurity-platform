@@ -108,9 +108,56 @@ async function run() {
   assert.equal(unauthRes.status, 401, "Protected endpoint without token must return HTTP 401");
   console.log("✓ Unauthenticated access correctly blocked with 401.");
 
+  // 9. Guest Threat Analysis (No Login Required)
+  console.log("\n9. Executing Guest URL threat analysis (POST /api/v1/analyze/url without token)...");
+  const guestScanRes = await fetch(`${API_URL}/analyze/url`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: "https://secure-portal.bank.example.org" }),
+  });
+  assert.equal(guestScanRes.status, 200, "Guest URL scan must succeed with 200");
+  const guestScanData = await guestScanRes.json();
+  assert.ok(guestScanData.scan_id, "Scan ID must be returned");
+  assert.ok(guestScanData.risk_level, "Risk level must be returned");
+  assert.equal(typeof guestScanData.risk_score, "number", "Risk score must be a number");
+  console.log(`✓ Guest threat analysis succeeded. Scan ID: ${guestScanData.scan_id}, Risk: ${guestScanData.risk_level}`);
+
+  // 10. Authenticated Threat Analysis (Saves to Account History)
+  console.log("\n10. Executing Authenticated URL threat analysis (with Bearer token)...");
+  const authScanRes = await fetch(`${API_URL}/analyze/url`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${loginData.session_token}`,
+    },
+    body: JSON.stringify({ url: "https://phishing-credential-harvesting-demo.net" }),
+  });
+  assert.equal(authScanRes.status, 200, "Authenticated URL scan must succeed with 200");
+  const authScanData = await authScanRes.json();
+  assert.ok(authScanData.scan_id, "Authenticated Scan ID must be returned");
+  console.log(`✓ Authenticated threat analysis succeeded. Scan ID: ${authScanData.scan_id}`);
+
+  // 11. Retrieve Account History (Authorized)
+  console.log("\n11. Retrieving account history with Bearer token (GET /api/v1/analyze/history)...");
+  const histRes = await fetch(`${API_URL}/analyze/history?limit=10`, {
+    headers: { Authorization: `Bearer ${loginData.session_token}` },
+  });
+  assert.equal(histRes.status, 200, "History retrieval must return HTTP 200");
+  const histData = await histRes.json();
+  assert.ok(Array.isArray(histData), "History items must be an array");
+  console.log(`✓ Account history retrieved successfully (${histData.length} records found).`);
+
+  // 12. History Endpoint Rejects Unauthenticated Access
+  console.log("\n12. Verifying history endpoint rejects unauthenticated access...");
+  const unauthHistRes = await fetch(`${API_URL}/analyze/history`);
+  assert.equal(unauthHistRes.status, 401, "Unauthenticated history request must return 401");
+  console.log("✓ Unauthenticated history access blocked with 401.");
+
+
   console.log("\n=======================================================");
-  console.log("🎉 ALL LIVE INTEGRATION & CONTRACT TESTS PASSED WITH 100% SUCCESS!");
+  console.log("🎉 ALL LIVE INTEGRATION, THREAT ANALYSIS & CONTRACT TESTS PASSED WITH 100% SUCCESS!");
   console.log("=======================================================");
+
 }
 
 run().catch((err) => {
