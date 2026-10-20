@@ -199,7 +199,7 @@ export async function safeFetchWithDiagnostics(
   const correlationId = extractCorrelationId(response.headers);
   const status = response.status;
   let errorDetail = "";
-  let isRailwayEdge404 = false;
+  let isPlatformEdge404 = false;
 
   try {
     const text = await response.text();
@@ -212,8 +212,12 @@ export async function safeFetchWithDiagnostics(
           errorDetail = json.detail.map((d: any) => d.msg || "").filter(Boolean).join("; ");
         } else if (typeof json.message === "string") {
           errorDetail = json.message;
-          if (json.message.includes("Application not found")) {
-            isRailwayEdge404 = true;
+          if (
+            json.message.includes("Application not found") ||
+            json.message.includes("Service not found") ||
+            json.message.includes("Not Found")
+          ) {
+            isPlatformEdge404 = true;
           }
         }
       } catch {
@@ -224,21 +228,21 @@ export async function safeFetchWithDiagnostics(
     // text() extraction failed
   }
 
-  if (response.headers.get("x-railway-fallback") === "true") {
-    isRailwayEdge404 = true;
+  if (response.headers.get("x-railway-fallback") === "true" || response.headers.get("x-platform-fallback") === "true") {
+    isPlatformEdge404 = true;
   }
 
   if (status === 404) {
-    if (isRailwayEdge404) {
+    if (isPlatformEdge404) {
       throw new ApiError(
-        `Backend service not found on deployment platform (HTTP 404). The Railway/Render service may be deleted, renamed, or unmapped.`,
+        `Backend service not found on deployment platform (HTTP 404). The server container may be offline, stopped, or unmapped.`,
         "NOT_FOUND",
         {
           url,
           method,
           statusCode: 404,
           correlationId,
-          technicalDetail: "Platform edge proxy returned 404 Application not found (x-railway-fallback: true)",
+          technicalDetail: "Platform edge proxy returned 404 Application not found",
         }
       );
     }

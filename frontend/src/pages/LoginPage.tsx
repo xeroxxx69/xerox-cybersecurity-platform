@@ -20,6 +20,7 @@ import {
   getApiBaseUrl,
   setCustomApiUrl,
   getApiDiagnostics,
+  isBackendConfigured,
 } from "@/services/apiConfig";
 import { checkBackendHealth } from "@/services/api";
 
@@ -44,6 +45,7 @@ export const LoginPage: React.FC = () => {
   const location = useLocation();
 
   const from = (location.state as any)?.from?.pathname || "/dashboard";
+  const isStandalone = !isBackendConfigured();
 
   useEffect(() => {
     const saved = localStorage.getItem("xerox_remember_me");
@@ -79,6 +81,15 @@ export const LoginPage: React.FC = () => {
     e.preventDefault();
     setServerError(null);
     setServerErrorKind(null);
+
+    if (!isBackendConfigured()) {
+      setServerErrorKind("CONFIG_INVALID");
+      setServerError(
+        "No backend security enclave configured. To authenticate with a cloud account, configure an HTTPS backend URL below, or continue as a guest without signing in."
+      );
+      setShowBackendConfig(true);
+      return;
+    }
 
     const emailError = validateEmail(email);
     const passwordError = validateLoginPassword(password);
@@ -140,18 +151,35 @@ export const LoginPage: React.FC = () => {
     setPingDetail(null);
     try {
       const res = await checkBackendHealth();
-      setPingStatus("online");
-      setPingDetail(`Healthy (${res.service || "XEROX API"} v${res.version || "1.0"})`);
+      if (res.status === "not_configured") {
+        setPingStatus("idle");
+        setPingDetail("Edge Standalone Mode active (no external backend configured).");
+      } else if (res.status === "healthy") {
+        setPingStatus("online");
+        setPingDetail(`Healthy (${res.service || "XEROX API"} v${res.version || "1.0"}) - ${res.latencyMs}ms`);
+      } else if (res.status === "degraded") {
+        setPingStatus("offline");
+        setPingDetail(`Degraded (${res.errorDetail || "Database or cache degraded"})`);
+      } else {
+        setPingStatus("offline");
+        setPingDetail(res.errorDetail || "Endpoint unreachable or misconfigured");
+      }
     } catch (err: any) {
       setPingStatus("offline");
       setPingDetail(err?.userMessage || err?.message || "Endpoint unreachable");
     }
   };
 
-
   const handleSaveBackendUrl = () => {
     const trimmed = customUrlInput.trim();
-    const result = setCustomApiUrl(trimmed || null);
+    if (!trimmed) {
+      setCustomApiUrl(null);
+      setCustomUrlInput("");
+      setPingStatus("idle");
+      setPingDetail("Reset to default Edge Standalone Mode (no external server).");
+      return;
+    }
+    const result = setCustomApiUrl(trimmed);
     if (!result.isValid) {
       setPingStatus("offline");
       setPingDetail(result.error || "Invalid URL");
@@ -163,16 +191,15 @@ export const LoginPage: React.FC = () => {
 
   const handleResetBackendUrl = () => {
     setCustomApiUrl(null);
-    const defaultUrl = getApiBaseUrl();
-    setCustomUrlInput(defaultUrl);
-    setPingDetail("Reset to default configuration.");
+    setCustomUrlInput("");
+    setPingDetail("Reset to default Edge Standalone Mode.");
     setPingStatus("idle");
   };
 
   const diagnostics = getApiDiagnostics();
 
   return (
-    <div className="relative min-h-[calc(100vh-12rem)] flex items-center justify-center px-4 py-8 sm:py-12">
+    <div className="relative min-h-[calc(100vh-12rem)] flex items-center justify-center px-4 py-8 sm:py-12 overflow-x-hidden">
       {/* Subtle Ambient Red Glow Background Effect */}
       <div
         aria-hidden="true"
@@ -182,7 +209,7 @@ export const LoginPage: React.FC = () => {
       </div>
 
       {/* Main Centered Login Card */}
-      <div className="relative w-full max-w-[460px] rounded-2xl bg-[#12141c] border border-[#222735] shadow-[0_16px_50px_-10px_rgba(0,0,0,0.85)] p-6 sm:p-9 transition-all">
+      <div className="relative w-full max-w-[460px] rounded-2xl bg-[#12141c] border border-[#222735] shadow-[0_16px_50px_-10px_rgba(0,0,0,0.85)] p-5 sm:p-9 transition-all">
         {/* Subtle Top Red Accent Line */}
         <div
           aria-hidden="true"
@@ -211,6 +238,28 @@ export const LoginPage: React.FC = () => {
             Enter analyst credentials to access protected defensive telemetry
           </p>
         </div>
+
+        {/* Standalone Edge Mode Notice for Guests */}
+        {isStandalone && (
+          <div className="mt-5 p-3.5 rounded-xl bg-cyan-950/30 border border-cyan-500/30 text-cyan-200 text-xs space-y-2">
+            <div className="flex items-center gap-2 font-mono font-semibold text-cyan-300">
+              <ShieldCheck className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+              <span>STANDALONE EDGE MODE ACTIVE</span>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              XEROX runs autonomous, client-side threat analysis directly in your browser without requiring a backend server or login.
+            </p>
+            <div className="pt-1">
+              <Link
+                to="/analyze"
+                className="inline-flex items-center justify-center gap-1.5 w-full py-2 px-3 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-200 text-xs font-mono font-medium transition-colors"
+              >
+                <span>CONTINUE AS GUEST OPERATOR</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+        )}
 
         {/* Forgot Password Information Notice */}
         {showForgotNotice && (
@@ -281,21 +330,21 @@ export const LoginPage: React.FC = () => {
 
             <div className="space-y-1.5">
               <label htmlFor="custom-backend-url" className="text-[11px] text-slate-400">
-                API Base URL (HTTPS required on GitHub Pages):
+                API Base URL (Leave empty for Edge Standalone Mode):
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   id="custom-backend-url"
                   type="text"
                   value={customUrlInput}
                   onChange={(e) => setCustomUrlInput(e.target.value)}
-                  placeholder="https://your-backend.up.railway.app/api/v1"
-                  className="flex-1 bg-[#12151f] border border-[#252c3e] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-xerox-red"
+                  placeholder="https://api.yourdomain.com/api/v1"
+                  className="flex-1 bg-[#12151f] border border-[#252c3e] rounded-lg px-2.5 py-2 text-base sm:text-xs text-white focus:outline-none focus:border-xerox-red"
                 />
                 <button
                   type="button"
                   onClick={handleSaveBackendUrl}
-                  className="px-2.5 py-1.5 bg-red-600/80 hover:bg-red-600 text-white rounded-lg text-xs font-medium transition-colors"
+                  className="px-3 py-2 bg-red-600/80 hover:bg-red-600 text-white rounded-lg text-xs font-medium transition-colors"
                 >
                   Save
                 </button>
@@ -319,8 +368,8 @@ export const LoginPage: React.FC = () => {
               </div>
             )}
 
-            <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono pt-1">
-              <span>Source: {diagnostics.source}</span>
+            <div className="flex flex-wrap items-center justify-between text-[10px] text-slate-500 font-mono pt-1 gap-2">
+              <span>Source: {diagnostics.sourceLabel || diagnostics.source}</span>
               <button
                 type="button"
                 onClick={handleResetBackendUrl}
@@ -346,7 +395,7 @@ export const LoginPage: React.FC = () => {
             autoComplete="email"
             placeholder="analyst@domain.gov"
             leftIcon={<Mail className="w-4 h-4" />}
-            className="bg-[#0e1017] border-[#222736] focus:border-xerox-red focus:ring-xerox-red/30 h-11 text-sm placeholder-slate-500 text-slate-100"
+            className="bg-[#0e1017] border-[#222736] focus:border-xerox-red focus:ring-xerox-red/30 h-11 text-base sm:text-sm placeholder-slate-500 text-slate-100"
           />
 
           <Input
@@ -362,7 +411,7 @@ export const LoginPage: React.FC = () => {
             autoComplete="current-password"
             placeholder="••••••••••••"
             leftIcon={<Lock className="w-4 h-4" />}
-            className="bg-[#0e1017] border-[#222736] focus:border-xerox-red focus:ring-xerox-red/30 h-11 text-sm placeholder-slate-500 text-slate-100"
+            className="bg-[#0e1017] border-[#222736] focus:border-xerox-red focus:ring-xerox-red/30 h-11 text-base sm:text-sm placeholder-slate-500 text-slate-100"
           />
 
           {/* Remember Me & Forgot Password Row */}

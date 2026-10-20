@@ -18,10 +18,10 @@ console.log("✓ URL sanitization passed");
 
 // 2. Correlation ID Extraction from diverse headers
 console.log("Testing correlation ID extraction...");
-const mockRailwayHeaders = {
-  "x-railway-request-id": "rw-req-998877",
+const mockPlatformHeaders = {
+  "x-correlation-id": "corr-req-998877",
 };
-assert.equal(extractCorrelationId(mockRailwayHeaders), "rw-req-998877");
+assert.equal(extractCorrelationId(mockPlatformHeaders), "corr-req-998877");
 
 const mockStandardHeaders = {
   "x-request-id": "req-uuid-112233",
@@ -38,9 +38,9 @@ console.log("✓ Correlation ID extraction passed");
 
 // 3. ApiError instantiation and classification
 console.log("Testing ApiError structure and diagnostic formatting...");
-const err404 = new ApiError("Application not found on Railway", "NOT_FOUND", {
+const err404 = new ApiError("Application not found on hosting platform", "NOT_FOUND", {
   statusCode: 404,
-  url: "https://web-production-69de4.up.railway.app/api/v1/health",
+  url: "https://api.xerox-defense.com/api/v1/health",
   correlationId: "sZsagdhoTLaj67gD2prcFg",
   technicalDetail: "Platform edge proxy returned 404 Application not found",
 });
@@ -68,7 +68,7 @@ console.log("✓ 401 Unauthorized distinction verified");
 // 5. Distinction: CORS refusal is NEVER reported as server crash (500)
 console.log("Testing CORS / blocked distinction...");
 const errCors = new ApiError("Browser blocked cross-origin request", "CORS_OR_BLOCKED", {
-  url: "https://web-production-69de4.up.railway.app/api/v1",
+  url: "https://api.xerox-defense.com/api/v1",
   technicalDetail: "Failed to fetch - Access-Control-Allow-Origin header absent",
 });
 assert.equal(errCors.kind, "CORS_OR_BLOCKED");

@@ -35,10 +35,18 @@ function getAuthHeaders(extraHeaders: Record<string, string> = {}): Record<strin
   return headers;
 }
 
+export type BackendHealthStatus =
+  | "healthy"
+  | "degraded"
+  | "unavailable"
+  | "misconfigured"
+  | "not_configured";
+
 export interface BackendHealthResult {
-  status: string;
-  service: string;
-  version: string;
+  status: BackendHealthStatus;
+  isOnline: boolean;
+  service?: string;
+  version?: string;
   database?: string;
   cache?: string;
   redis?: Record<string, string>;
@@ -46,56 +54,141 @@ export interface BackendHealthResult {
   baseUrl: string;
   latencyMs: number;
   correlationId?: string;
+  errorDetail?: string;
+}
+
+export interface AnalysisEndpointTestResult {
+  success: boolean;
+  status: "success" | "failed" | "not_configured";
+  endpoint: string;
+  latencyMs: number;
+  targetTested: string;
+  riskLevel?: string;
+  riskScore?: number;
+  errorDetail?: string;
 }
 
 export async function checkBackendHealth(): Promise<BackendHealthResult> {
-  // If backend is not configured, operate in Edge Standalone Mode with zero failed network calls
+  // If backend is not configured, explicitly report not_configured (never simulate healthy)
   if (!isBackendConfigured()) {
     return {
-      status: "standalone",
-      service: "XEROX Autonomous Edge Engine",
-      version: "1.0.0",
-      database: "IndexedDB / Local Storage",
-      cache: "Active",
-      checks: {
-        engine: "active",
-        storage: "connected",
-        mode: "standalone_edge",
-      },
-      baseUrl: "Client-Side Standalone Engine",
+      status: "not_configured",
+      isOnline: false,
+      baseUrl: "",
       latencyMs: 0,
+      service: "Edge Standalone Core (In-Browser)",
+      version: "1.0.0",
+      errorDetail: "No external backend enclave configured. Platform operating in zero-server Edge Standalone Mode.",
     };
   }
 
   const baseUrl = getApiBaseUrl();
   const startTime = Date.now();
 
-  const res = await safeFetchWithDiagnostics(
-    `${baseUrl}/health`,
-    {
-      headers: getAuthHeaders(),
-      credentials: "include",
-      cache: "no-store",
-    },
-    10000
-  );
+  try {
+    const res = await safeFetchWithDiagnostics(
+      `${baseUrl}/health`,
+      {
+        headers: getAuthHeaders(),
+        credentials: "include",
+        cache: "no-store",
+      },
+      10000
+    );
 
-  const latencyMs = Date.now() - startTime;
-  const correlationId = extractCorrelationId(res.headers);
-  const data = await parseJsonSafely<Record<string, any>>(res, `${baseUrl}/health`);
+    const latencyMs = Date.now() - startTime;
+    const correlationId = extractCorrelationId(res.headers);
+    const data = await parseJsonSafely<Record<string, any>>(res, `${baseUrl}/health`);
 
-  return {
-    status: data.status || "healthy",
-    service: data.service || "XEROX API",
-    version: data.version || "1.0.0",
-    database: data.database,
-    cache: data.cache,
-    redis: data.redis,
-    checks: data.checks,
-    baseUrl,
-    latencyMs,
-    correlationId,
-  };
+    const isDegraded =
+      data.status === "degraded" ||
+      data.database === "disconnected" ||
+      data.cache === "disconnected";
+
+    return {
+      status: isDegraded ? "degraded" : "healthy",
+      isOnline: true,
+      service: data.service || "XEROX API",
+      version: data.version || "1.0.0",
+      database: data.database,
+      cache: data.cache,
+      redis: data.redis,
+      checks: data.checks,
+      baseUrl,
+      latencyMs,
+      correlationId,
+    };
+  } catch (err: any) {
+    const latencyMs = Date.now() - startTime;
+    const statusCode = err?.statusCode;
+    const isMisconfigured =
+      statusCode === 404 ||
+      statusCode === 401 ||
+      statusCode === 403 ||
+      err?.kind === "CORS_OR_BLOCKED";
+
+    return {
+      status: isMisconfigured ? "misconfigured" : "unavailable",
+      isOnline: false,
+      baseUrl,
+      latencyMs,
+      errorDetail: err?.userMessage || err?.message || "Security enclave connection failed",
+    };
+  }
+}
+
+export async function testBackendAnalysisEndpoint(
+  probeUrl: string = "https://example.com"
+): Promise<AnalysisEndpointTestResult> {
+  if (!isBackendConfigured()) {
+    return {
+      success: false,
+      status: "not_configured",
+      endpoint: "",
+      latencyMs: 0,
+      targetTested: probeUrl,
+      errorDetail: "No backend enclave configured. Analysis endpoint probe requires an active backend URL.",
+    };
+  }
+
+  const baseUrl = getApiBaseUrl();
+  const targetUrl = `${baseUrl}/analyze/url`;
+  const startTime = Date.now();
+
+  try {
+    const res = await safeFetchWithDiagnostics(
+      targetUrl,
+      {
+        method: "POST",
+        headers: getAuthHeaders({ "Content-Type": "application/json" }),
+        credentials: "include",
+        body: JSON.stringify({ url: probeUrl }),
+      },
+      15000
+    );
+    const latencyMs = Date.now() - startTime;
+    const report = await parseJsonSafely<ThreatReport>(res, targetUrl);
+
+    return {
+      success: true,
+      status: "success",
+      endpoint: targetUrl,
+      latencyMs,
+      targetTested: probeUrl,
+      riskLevel: report.risk_level,
+      riskScore: report.risk_score,
+    };
+  } catch (err: any) {
+    const latencyMs = Date.now() - startTime;
+    return {
+      success: false,
+      status: "failed",
+      endpoint: targetUrl,
+      latencyMs,
+      targetTested: probeUrl,
+      errorDetail: err?.userMessage || err?.message || "Analysis request failed",
+    };
+  }
 }
 
 export async function scanUrl(url: string): Promise<ThreatReport> {

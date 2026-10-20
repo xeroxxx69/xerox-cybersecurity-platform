@@ -3,19 +3,31 @@
  *
  * Ensures a single, validated API endpoint across the entire application.
  * Prevents accidental localhost targeting in production, normalizes URL formats,
- * and allows dynamic runtime fallback/override for hosted environments.
+ * rejects obsolete/placeholder hosts, and guarantees zero-dependency Edge Standalone Mode.
  */
 
 export interface ApiValidationResult {
   isValid: boolean;
   error?: string;
+  isEmpty?: boolean;
+  isPlaceholder?: boolean;
   isLocalhostInProd?: boolean;
 }
 
+export type ApiConfigSource =
+  | "runtime_override"
+  | "window_override"
+  | "env_var"
+  | "standalone_default"
+  | "local_dev_proxy";
+
 export interface ApiDiagnostics {
   baseUrl: string;
-  source: "runtime_override" | "env_var" | "github_pages_default" | "local_dev_proxy";
-  environment: string;
+  source: ApiConfigSource;
+  sourceLabel: string;
+  isConfigured: boolean;
+  isStandalone: boolean;
+  environment: "production" | "development";
   isProduction: boolean;
   isValid: boolean;
   validationError?: string;
@@ -26,6 +38,18 @@ const STORAGE_KEY_CUSTOM_API = "xerox_custom_api_url";
 // Default production backend endpoint: empty by default (enables zero-latency Edge Standalone Mode)
 // When an analyst configures a custom backend or sets VITE_API_URL, it automatically connects.
 export const DEFAULT_PRODUCTION_API = "";
+
+const PLACEHOLDER_PATTERNS = [
+  "your-backend",
+  "yourdomain.com",
+  "example.com",
+  "your-api",
+  "my-backend",
+  "<your-",
+  "{backend}",
+  "placeholder",
+  "web-production-69de4.up.railway.app",
+];
 
 /**
  * Safely retrieves an environment variable across Vite and Node.js environments.
@@ -77,19 +101,43 @@ export function isProductionMode(): boolean {
 
 /**
  * Validates a candidate API Base URL.
- * Enforces valid URL scheme, format, and forbids localhost in production.
+ * Enforces valid URL scheme, format, and rejects placeholders, obsolete hosts, and localhost in production.
  */
 export function validateApiUrl(
   url: string,
   isProd: boolean = isProductionMode()
 ): ApiValidationResult {
-  if (!url || typeof url !== "string") {
-    return { isValid: false, error: "API URL must be a non-empty string." };
+  if (!url || typeof url !== "string" || !url.trim()) {
+    return {
+      isValid: false,
+      isEmpty: true,
+      error: "API URL cannot be empty when configuring a backend enclave.",
+    };
   }
 
   const trimmed = url.trim();
+  const lower = trimmed.toLowerCase();
 
-  // Allow relative paths only in development/preview
+  // 1. Placeholder & obsolete pattern detection
+  for (const placeholder of PLACEHOLDER_PATTERNS) {
+    if (lower.includes(placeholder)) {
+      return {
+        isValid: false,
+        isPlaceholder: true,
+        error: `Placeholder or obsolete URL detected ("${trimmed}"). Please configure a live HTTPS backend or leave empty for Standalone Edge Mode.`,
+      };
+    }
+  }
+
+  if (lower.includes(".up.railway.app")) {
+    return {
+      isValid: false,
+      isPlaceholder: true,
+      error: `Railway backend hosting has been decommissioned. Please configure a live HTTPS backend or leave empty for Standalone Edge Mode.`,
+    };
+  }
+
+  // 2. Allow relative paths only in development/preview
   if (trimmed.startsWith("/")) {
     if (isProd && typeof window !== "undefined" && window.location.hostname.endsWith("github.io")) {
       return {
@@ -100,11 +148,15 @@ export function validateApiUrl(
     return { isValid: true };
   }
 
+  // 3. Full URL Parsing
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
   } catch {
-    return { isValid: false, error: `Malformed API URL: "${trimmed}". Must be a valid HTTP or HTTPS URL.` };
+    return {
+      isValid: false,
+      error: `Malformed API URL: "${trimmed}". Must be a valid HTTP or HTTPS URL.`,
+    };
   }
 
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
@@ -139,10 +191,33 @@ export function validateApiUrl(
 }
 
 /**
- * Normalizes an API base URL (strips trailing slashes).
+ * Normalizes an API base URL (strips trailing slashes, ensures /api/v1 suffix).
  */
 export function normalizeApiUrl(url: string): string {
-  return url.trim().replace(/\/+$/, "");
+  if (!url || typeof url !== "string") return "";
+  const trimmed = url.trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+
+  if (trimmed.startsWith("/")) {
+    if (trimmed === "/" || trimmed === "/api") return "/api/v1";
+    return trimmed;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    let pathname = parsed.pathname.replace(/\/+$/, "");
+
+    if (pathname === "" || pathname === "/") {
+      pathname = "/api/v1";
+    } else if (pathname === "/api") {
+      pathname = "/api/v1";
+    }
+
+    parsed.pathname = pathname;
+    return parsed.toString().replace(/\/+$/, "");
+  } catch {
+    return trimmed;
+  }
 }
 
 /**
@@ -150,7 +225,7 @@ export function normalizeApiUrl(url: string): string {
  * 1. Runtime override from localStorage (analyst-configured via UI)
  * 2. Window global override (window.__XEROX_API_URL__)
  * 3. Build-time environment variable (VITE_API_URL)
- * 4. GitHub Pages production fallback (DEFAULT_PRODUCTION_API)
+ * 4. GitHub Pages production default (DEFAULT_PRODUCTION_API = "")
  * 5. Local development fallback ("/api/v1")
  */
 export function getApiBaseUrl(): string {
@@ -162,6 +237,9 @@ export function getApiBaseUrl(): string {
         const validated = validateApiUrl(stored);
         if (validated.isValid) {
           return normalizeApiUrl(stored);
+        } else {
+          // Stale, malformed, or placeholder stored URL — clean it up automatically
+          localStorage.removeItem(STORAGE_KEY_CUSTOM_API);
         }
       }
     } catch {
@@ -187,8 +265,8 @@ export function getApiBaseUrl(): string {
     }
   }
 
-  // 4. GitHub Pages production default
-  if (typeof window !== "undefined" && window.location.hostname.endsWith("github.io")) {
+  // 4. GitHub Pages / static production default (Edge Standalone Mode)
+  if (typeof window !== "undefined" && (window.location.hostname.endsWith("github.io") || isProductionMode())) {
     return DEFAULT_PRODUCTION_API;
   }
 
@@ -198,21 +276,21 @@ export function getApiBaseUrl(): string {
 
 /**
  * Determines whether an active external backend API is configured.
- * Returns false when operating in Edge Standalone Mode or if pointing to an obsolete host.
+ * Returns false when operating in Edge Standalone Mode or if pointing to an obsolete/placeholder host.
  */
 export function isBackendConfigured(): boolean {
   const url = getApiBaseUrl();
-  if (!url || url.trim() === "") return false;
-  if (url.includes("web-production-69de4.up.railway.app")) return false;
-  return true;
+  if (!url || typeof url !== "string" || !url.trim()) return false;
+  const validation = validateApiUrl(url);
+  return validation.isValid;
 }
 
 /**
  * Updates or clears the analyst's custom runtime API base URL.
+ * Passing null or empty string resets to Edge Standalone Mode.
  */
-
 export function setCustomApiUrl(url: string | null): ApiValidationResult {
-  if (url === null || url.trim() === "") {
+  if (url === null || url === undefined || url.trim() === "") {
     if (typeof window !== "undefined") {
       try {
         localStorage.removeItem(STORAGE_KEY_CUSTOM_API);
@@ -242,42 +320,73 @@ export function setCustomApiUrl(url: string | null): ApiValidationResult {
  * Returns diagnostic metadata about the current API configuration.
  */
 export function getApiDiagnostics(): ApiDiagnostics {
-  let source: ApiDiagnostics["source"] = "local_dev_proxy";
+  let source: ApiConfigSource = "local_dev_proxy";
+  let sourceLabel = "Local Dev Proxy (/api/v1)";
   let rawUrl = "/api/v1";
 
   if (typeof window !== "undefined") {
     try {
       const stored = localStorage.getItem(STORAGE_KEY_CUSTOM_API);
       if (stored && stored.trim()) {
-        rawUrl = stored;
-        source = "runtime_override";
+        const validation = validateApiUrl(stored);
+        if (validation.isValid) {
+          rawUrl = stored;
+          source = "runtime_override";
+          sourceLabel = "Analyst Custom Enclave (Saved in Browser Storage)";
+        } else {
+          localStorage.removeItem(STORAGE_KEY_CUSTOM_API);
+        }
       }
     } catch {
       // ignore
+    }
+
+    if (source === "local_dev_proxy") {
+      const windowOverride = (window as any).__XEROX_API_URL__;
+      if (typeof windowOverride === "string" && windowOverride.trim()) {
+        const validation = validateApiUrl(windowOverride);
+        if (validation.isValid) {
+          rawUrl = windowOverride;
+          source = "window_override";
+          sourceLabel = "Window Global Override";
+        }
+      }
     }
   }
 
   if (source === "local_dev_proxy") {
     const envUrl = getEnvVar("VITE_API_URL");
     if (envUrl && envUrl.trim()) {
-      rawUrl = envUrl;
-      source = "env_var";
-    } else if (typeof window !== "undefined" && window.location.hostname.endsWith("github.io")) {
+      const validation = validateApiUrl(envUrl);
+      if (validation.isValid) {
+        rawUrl = envUrl;
+        source = "env_var";
+        sourceLabel = "Build Environment Variable (VITE_API_URL)";
+      }
+    } else if (typeof window !== "undefined" && (window.location.hostname.endsWith("github.io") || isProductionMode())) {
       rawUrl = DEFAULT_PRODUCTION_API;
-      source = "github_pages_default";
+      source = "standalone_default";
+      sourceLabel = "Standalone Edge Mode (GitHub Pages Default)";
     }
   }
 
   const isProd = isProductionMode();
-  const validation = validateApiUrl(rawUrl, isProd);
+  const configured = isBackendConfigured();
+  const isStandalone = !configured;
+
+  const isValid = isStandalone ? true : validateApiUrl(rawUrl, isProd).isValid;
+  const validationError = isStandalone ? undefined : validateApiUrl(rawUrl, isProd).error;
 
   return {
     baseUrl: getApiBaseUrl(),
     source,
+    sourceLabel,
+    isConfigured: configured,
+    isStandalone,
     environment: isProd ? "production" : "development",
     isProduction: isProd,
-    isValid: validation.isValid,
-    validationError: validation.error,
+    isValid,
+    validationError,
   };
 }
 

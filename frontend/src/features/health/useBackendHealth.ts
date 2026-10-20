@@ -37,21 +37,22 @@ export function useBackendHealth(pollIntervalMs: number = 30000): EnclaveHealthS
     try {
       const result: BackendHealthResult = await checkBackendHealth();
       setLatencyMs(result.latencyMs);
-      setVersion(result.version);
+      setVersion(result.version || null);
       setDatabaseStatus(result.database || null);
       setCacheStatus(result.cache || null);
-      setErrorDetail(null);
+      setErrorDetail(result.errorDetail || null);
       setLastChecked(new Date());
 
-      if (result.status === "standalone") {
+      if (result.status === "not_configured") {
         setStatus("standalone");
       } else if (result.status === "healthy") {
         setStatus("online");
-      } else {
+      } else if (result.status === "degraded") {
         setStatus("degraded");
+      } else {
+        setStatus("offline");
       }
     } catch (err: any) {
-
       setLatencyMs(null);
       setLastChecked(new Date());
       setStatus("offline");

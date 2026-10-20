@@ -28,8 +28,14 @@ import {
   getApiDiagnostics,
   setCustomApiUrl,
   validateApiUrl,
+  isBackendConfigured,
 } from "@/services/apiConfig";
-import { checkBackendHealth, BackendHealthResult } from "@/services/api";
+import {
+  checkBackendHealth,
+  BackendHealthResult,
+  testBackendAnalysisEndpoint,
+  AnalysisEndpointTestResult,
+} from "@/services/api";
 
 export const SettingsPage: React.FC = () => {
   const { user } = useAuth();
@@ -45,6 +51,10 @@ export const SettingsPage: React.FC = () => {
   const [healthResult, setHealthResult] = useState<BackendHealthResult | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
 
+  // Analysis Endpoint Probe State
+  const [analysisTesting, setAnalysisTesting] = useState(false);
+  const [analysisTestResult, setAnalysisTestResult] = useState<AnalysisEndpointTestResult | null>(null);
+
   const diagnostics = getApiDiagnostics();
 
   const handleTestHealth = async () => {
@@ -54,7 +64,15 @@ export const SettingsPage: React.FC = () => {
     try {
       const res = await checkBackendHealth();
       setHealthResult(res);
-      toast.success(`Enclave responded in ${res.latencyMs}ms (${res.status})`);
+      if (res.status === "not_configured") {
+        toast.info("Edge Standalone Mode: No external backend configured.");
+      } else if (res.status === "healthy") {
+        toast.success(`Enclave responded in ${res.latencyMs}ms (${res.status})`);
+      } else if (res.status === "degraded") {
+        toast.warning(`Enclave degraded (${res.database || "Database check warning"})`);
+      } else {
+        toast.error(`Enclave probe failed: ${res.errorDetail || res.status}`);
+      }
     } catch (err: any) {
       const msg = err?.userMessage || err?.message || "Enclave endpoint unreachable";
       setHealthError(msg);
@@ -64,29 +82,60 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const handleTestAnalysis = async () => {
+    setAnalysisTesting(true);
+    setAnalysisTestResult(null);
+    try {
+      const res = await testBackendAnalysisEndpoint();
+      setAnalysisTestResult(res);
+      if (res.success) {
+        toast.success(`Analysis pipeline responded in ${res.latencyMs}ms (${res.riskLevel})`);
+      } else {
+        toast.error(`Analysis probe: ${res.errorDetail || "Probe failed"}`);
+      }
+    } catch (err: any) {
+      toast.error(`Analysis probe error: ${err?.message || "Failed"}`);
+    } finally {
+      setAnalysisTesting(false);
+    }
+  };
+
   const handleSaveApiUrl = () => {
     const trimmed = customUrlInput.trim();
-    const validation = validateApiUrl(trimmed || getApiBaseUrl());
+    if (!trimmed) {
+      setCustomApiUrl(null);
+      setCustomUrlInput("");
+      setHealthResult(null);
+      setHealthError(null);
+      setAnalysisTestResult(null);
+      toast.success("Enclave URL cleared. Operating in Edge Standalone Mode.");
+      return;
+    }
+
+    const validation = validateApiUrl(trimmed);
     if (!validation.isValid) {
       toast.error(validation.error || "Invalid API URL");
       return;
     }
-    const result = setCustomApiUrl(trimmed || null);
+
+    const result = setCustomApiUrl(trimmed);
     if (!result.isValid) {
       toast.error(result.error || "Failed to save API URL");
       return;
     }
+
+    setCustomUrlInput(getApiBaseUrl());
     toast.success("Enclave Base URL updated. Probing health...");
     handleTestHealth();
   };
 
   const handleResetApiUrl = () => {
     setCustomApiUrl(null);
-    const defaultUrl = getApiBaseUrl();
-    setCustomUrlInput(defaultUrl);
+    setCustomUrlInput("");
     setHealthResult(null);
     setHealthError(null);
-    toast.info("Reset to default configuration.");
+    setAnalysisTestResult(null);
+    toast.info("Reset to default Edge Standalone configuration.");
   };
 
   const handleSaveSettings = () => {
@@ -94,7 +143,7 @@ export const SettingsPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
+    <div className="max-w-5xl mx-auto space-y-8 overflow-x-hidden">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-xerox-border-subtle pb-6">
         <div>
@@ -115,24 +164,38 @@ export const SettingsPage: React.FC = () => {
       {/* Backend Security Enclave & API Gateway Configuration */}
       <Card variant="alert" className="border-red-900/50">
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-red-400">
-              <Server className="w-4 h-4 text-xerox-red" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <CardTitle className="text-red-400 flex items-center gap-2">
+              <Server className="w-4 h-4 text-xerox-red flex-shrink-0" />
               Backend Security Enclave & API Gateway
             </CardTitle>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={handleTestHealth}
-              disabled={healthTesting}
-              leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${healthTesting ? "animate-spin" : ""}`} />}
-            >
-              TEST ENCLAVE CONNECTIVITY
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleTestHealth}
+                disabled={healthTesting}
+                leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${healthTesting ? "animate-spin" : ""}`} />}
+              >
+                TEST HEALTH ENDPOINT
+              </Button>
+              {isBackendConfigured() && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestAnalysis}
+                  disabled={analysisTesting}
+                  leftIcon={<RefreshCw className={`w-3.5 h-3.5 ${analysisTesting ? "animate-spin" : ""}`} />}
+                >
+                  TEST ANALYSIS PIPELINE
+                </Button>
+              )}
+            </div>
           </div>
           <CardDescription>
-            Configure the target FastAPI analysis enclave endpoint. When running on GitHub Pages, an HTTPS backend is required.
+            Configure an optional FastAPI backend enclave. Leaving this empty runs XEROX in zero-server Edge Standalone Mode.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -146,8 +209,8 @@ export const SettingsPage: React.FC = () => {
                 type="text"
                 value={customUrlInput}
                 onChange={(e) => setCustomUrlInput(e.target.value)}
-                placeholder="Leave empty for Edge Standalone or enter https://your-backend.onrender.com/api/v1"
-                className="flex-1 bg-xerox-surface-elevated border border-xerox-border rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-xerox-red"
+                placeholder="https://api.yourdomain.com/api/v1 (or leave empty for Standalone Edge)"
+                className="flex-1 bg-xerox-surface-elevated border border-xerox-border rounded-xl px-3 py-2 text-base sm:text-xs text-white font-mono focus:outline-none focus:border-xerox-red"
               />
 
               <Button type="button" variant="primary" size="sm" onClick={handleSaveApiUrl}>
@@ -157,30 +220,89 @@ export const SettingsPage: React.FC = () => {
                 RESET DEFAULT
               </Button>
             </div>
-            <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-500 pt-1">
-              <span>Source: <strong className="text-slate-300">{diagnostics.source}</strong></span>
+            <div className="flex flex-wrap items-center justify-between text-[11px] font-mono text-slate-500 pt-1 gap-2">
+              <span>Source: <strong className="text-slate-300">{diagnostics.sourceLabel}</strong></span>
               <span>Environment: <strong className="text-slate-300">{diagnostics.environment}</strong></span>
             </div>
           </div>
 
           {/* Health Check Result Card */}
           {healthResult && (
-            <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-xs font-mono space-y-1 text-emerald-300">
-              <div className="flex items-center gap-2 font-bold text-emerald-400">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>ENCLAVE ONLINE & RESPONDING</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  {healthResult.latencyMs}ms
+            <div
+              className={`p-3.5 rounded-xl border text-xs font-mono space-y-1 ${
+                healthResult.status === "not_configured"
+                  ? "bg-cyan-950/30 border-cyan-500/30 text-cyan-300"
+                  : healthResult.status === "healthy"
+                  ? "bg-emerald-950/30 border-emerald-500/40 text-emerald-300"
+                  : healthResult.status === "degraded"
+                  ? "bg-amber-950/30 border-amber-500/40 text-amber-300"
+                  : "bg-red-950/40 border-red-500/40 text-red-300"
+              }`}
+            >
+              <div className="flex items-center gap-2 font-bold">
+                {healthResult.status === "not_configured" ? (
+                  <StatusIndicator status="standalone" size="sm" />
+                ) : healthResult.status === "healthy" ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-amber-400" />
+                )}
+                <span>
+                  {healthResult.status === "not_configured"
+                    ? "STANDALONE EDGE MODE (NO EXTERNAL BACKEND CONFIGURED)"
+                    : healthResult.status === "healthy"
+                    ? "ENCLAVE ONLINE & RESPONDING"
+                    : healthResult.status === "degraded"
+                    ? "ENCLAVE DEGRADED"
+                    : "ENCLAVE MISCONFIGURED OR UNREACHABLE"}
                 </span>
-              </div>
-              <div className="text-[11px] text-slate-300 grid grid-cols-1 sm:grid-cols-2 gap-1 pt-1">
-                <span>Service: {healthResult.service} v{healthResult.version}</span>
-                <span>Database: <strong className="text-emerald-400">{healthResult.database || "connected"}</strong></span>
-                <span>Cache: <strong className="text-emerald-400">{healthResult.cache || "connected"}</strong></span>
-                {healthResult.correlationId && (
-                  <span>Request ID: {healthResult.correlationId.slice(0, 16)}...</span>
+                {healthResult.latencyMs > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-white/10 text-slate-200">
+                    {healthResult.latencyMs}ms
+                  </span>
                 )}
               </div>
+              <div className="text-[11px] text-slate-300 grid grid-cols-1 sm:grid-cols-2 gap-1 pt-1 font-sans">
+                {healthResult.service && <span>Service: {healthResult.service} v{healthResult.version || "1.0"}</span>}
+                {healthResult.database && (
+                  <span>Database: <strong className="text-emerald-400">{healthResult.database}</strong></span>
+                )}
+                {healthResult.cache && (
+                  <span>Cache: <strong className="text-emerald-400">{healthResult.cache}</strong></span>
+                )}
+                {healthResult.errorDetail && (
+                  <span className="col-span-full text-slate-300">{healthResult.errorDetail}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Separate Analysis Endpoint Probe Result */}
+          {analysisTestResult && (
+            <div
+              className={`p-3.5 rounded-xl border text-xs font-mono space-y-1 ${
+                analysisTestResult.success
+                  ? "bg-emerald-950/30 border-emerald-500/40 text-emerald-300"
+                  : "bg-red-950/40 border-red-500/40 text-red-300"
+              }`}
+            >
+              <div className="flex items-center gap-2 font-bold">
+                {analysisTestResult.success ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-red-400" />
+                )}
+                <span>
+                  {analysisTestResult.success
+                    ? `ANALYSIS ENDPOINT VERIFIED (${analysisTestResult.latencyMs}ms)`
+                    : "ANALYSIS ENDPOINT PROBE FAILED"}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 font-sans pt-0.5">
+                {analysisTestResult.success
+                  ? `Probe analysis on ${analysisTestResult.targetTested} succeeded. Risk: ${analysisTestResult.riskLevel} (${analysisTestResult.riskScore}/100).`
+                  : analysisTestResult.errorDetail}
+              </p>
             </div>
           )}
 

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { clearStoredToken, getStoredToken, setStoredToken } from "./tokenStorage";
-import { getApiBaseUrl, validateApiUrl } from "@/services/apiConfig";
+import { getApiBaseUrl, validateApiUrl, isBackendConfigured } from "@/services/apiConfig";
 
 export interface User {
   id: string;
@@ -52,6 +52,15 @@ async function fetchAuthWithDiagnostics(
   options: RequestInit,
   timeoutMs: number = 15000
 ): Promise<Response> {
+  if (!isBackendConfigured()) {
+    throw new AuthError(
+      "No backend security enclave configured. Cloud authentication is optional and requires an HTTPS backend enclave. You can use all security analysis features as a Guest.",
+      "CONFIG_INVALID",
+      undefined,
+      ""
+    );
+  }
+
   const baseUrl = getApiBaseUrl();
   const validation = validateApiUrl(baseUrl);
   if (!validation.isValid) {
@@ -112,12 +121,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshUser = async () => {
     const seq = ++reqSeq.current;
+
+    // In Standalone Edge mode (no backend configured), skip network auth checks silently
+    if (!isBackendConfigured()) {
+      if (seq === reqSeq.current) {
+        setUser(null);
+        setLoading(false);
+      }
+      return;
+    }
+
     try {
       const token = getStoredToken();
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
+      if (!token) {
+        if (seq === reqSeq.current) {
+          setUser(null);
+          setLoading(false);
+        }
+        return;
       }
+
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+      };
 
       const res = await fetchAuthWithDiagnostics(
         "/auth/me",
