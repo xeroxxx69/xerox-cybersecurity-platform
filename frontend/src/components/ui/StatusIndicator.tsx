@@ -1,6 +1,6 @@
 import React from "react";
 
-export type SystemStatus = "online" | "scanning" | "alert" | "idle" | "degraded" | "offline";
+export type SystemStatus = "online" | "scanning" | "alert" | "idle" | "degraded" | "offline" | "standalone";
 
 export interface StatusIndicatorProps extends React.HTMLAttributes<HTMLDivElement> {
   status?: SystemStatus;
@@ -23,6 +23,11 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
       dotColor: "bg-emerald-400",
       pingColor: "bg-emerald-400",
       defaultLabel: "ONLINE",
+    },
+    standalone: {
+      dotColor: "bg-cyan-400",
+      pingColor: "bg-cyan-400",
+      defaultLabel: "STANDALONE EDGE",
     },
     degraded: {
       dotColor: "bg-amber-400",
@@ -50,6 +55,7 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
       defaultLabel: "STANDBY",
     },
   };
+
 
 
   const { dotColor, pingColor, defaultLabel } = configs[status];

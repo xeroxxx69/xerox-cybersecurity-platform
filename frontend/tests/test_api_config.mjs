@@ -15,9 +15,11 @@ assert.equal(validProd1.isValid, true, "Valid HTTPS URL should pass validation i
 const validProd2 = validateApiUrl("https://xerox-api.onrender.com/api/v1", true);
 assert.equal(validProd2.isValid, true, "Valid Render HTTPS URL should pass validation in production");
 
-const validDefault = validateApiUrl(DEFAULT_PRODUCTION_API, true);
-assert.equal(validDefault.isValid, true, "Default production API must be valid");
-console.log("✓ Valid production URLs passed");
+const validProd3 = validateApiUrl("https://my-backend-enclave.org/api/v1", true);
+assert.equal(validProd3.isValid, true, "Valid custom enclave HTTPS URL should pass validation in production");
+assert.equal(DEFAULT_PRODUCTION_API, "", "Default production API must be empty string for zero-server Edge Standalone Mode");
+console.log("✓ Valid production URLs and standalone default passed");
+
 
 // 2. Reject Localhost in Production
 console.log("Testing localhost rejection in production mode...");

@@ -102,7 +102,9 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             <Link
               to="/settings"
               title={
-                health.status === "online"
+                health.status === "standalone"
+                  ? "Client-Side Edge Sandbox Active. Running autonomous deterministic threat analysis without external server dependencies. Click to configure custom enclave."
+                  : health.status === "online"
                   ? `Backend Enclave Online (${health.latencyMs}ms) at ${health.baseUrl}`
                   : health.status === "degraded"
                   ? `Backend Enclave Degraded: ${health.errorDetail || "Database/Cache check warning"}`
@@ -114,7 +116,9 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             >
               <StatusIndicator
                 status={
-                  health.status === "online"
+                  health.status === "standalone"
+                    ? "standalone"
+                    : health.status === "online"
                     ? "online"
                     : health.status === "degraded"
                     ? "degraded"
@@ -123,7 +127,9 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
                     : "scanning"
                 }
                 label={
-                  health.status === "online"
+                  health.status === "standalone"
+                    ? "EDGE SANDBOX ACTIVE"
+                    : health.status === "online"
                     ? `ENCLAVE ONLINE ${health.latencyMs !== null ? `(${health.latencyMs}ms)` : ""}`
                     : health.status === "degraded"
                     ? "ENCLAVE DEGRADED"
@@ -135,9 +141,10 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
               />
               <span className="text-slate-600 font-mono text-xs">|</span>
               <span className="text-[11px] font-mono text-slate-400 group-hover:text-slate-200 transition-colors">
-                HEURISTIC CORE
+                {health.status === "standalone" ? "STANDALONE CORE" : "HEURISTIC CORE"}
               </span>
             </Link>
+
 
 
             {/* Right: Quick Action & User Profile */}

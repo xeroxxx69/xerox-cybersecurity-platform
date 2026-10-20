@@ -138,7 +138,7 @@ export const SettingsPage: React.FC = () => {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="settings-api-url" className="text-xs font-mono text-slate-300 block">
-              Active Enclave Base URL:
+              Active Enclave Base URL (Leave empty for zero-server Edge Standalone Mode):
             </label>
             <div className="flex flex-col sm:flex-row gap-2">
               <input
@@ -146,9 +146,10 @@ export const SettingsPage: React.FC = () => {
                 type="text"
                 value={customUrlInput}
                 onChange={(e) => setCustomUrlInput(e.target.value)}
-                placeholder="https://your-backend.up.railway.app/api/v1"
+                placeholder="Leave empty for Edge Standalone or enter https://your-backend.onrender.com/api/v1"
                 className="flex-1 bg-xerox-surface-elevated border border-xerox-border rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-xerox-red"
               />
+
               <Button type="button" variant="primary" size="sm" onClick={handleSaveApiUrl}>
                 SAVE URL
               </Button>

@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
-import { History, ExternalLink, RefreshCw, Search, Trash2, ShieldAlert } from "lucide-react";
+import { History, ExternalLink, RefreshCw, Search, Trash2, ShieldAlert, Download } from "lucide-react";
 import { useAuth } from "@/features/auth/AuthContext";
 import { getHistory } from "@/services/api";
-import { getGuestHistory, clearGuestHistory } from "@/services/guestStorage";
+import { getGuestHistory, clearGuestHistory, exportGuestHistoryAsJson } from "@/services/guestStorage";
 import { ScanHistoryItem } from "@/types";
+
 import {
   Button,
   Badge,
@@ -117,6 +118,17 @@ export const HistoryPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {history.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportGuestHistoryAsJson}
+              leftIcon={<Download className="w-3.5 h-3.5 text-slate-400" />}
+              title="Download local scan history as a JSON file"
+            >
+              EXPORT JSON
+            </Button>
+          )}
           {!user && history.length > 0 && (
             <Button
               variant="outline"
@@ -138,6 +150,7 @@ export const HistoryPage: React.FC = () => {
           </Button>
         </div>
       </div>
+
 
       {/* Guest Mode Explanatory Notice */}
       {!user && (

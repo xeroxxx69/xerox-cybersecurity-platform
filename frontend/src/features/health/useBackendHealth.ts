@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { checkBackendHealth, BackendHealthResult } from "@/services/api";
 import { getApiBaseUrl } from "@/services/apiConfig";
 
-export type EnclaveStatus = "online" | "degraded" | "offline" | "checking";
+export type EnclaveStatus = "online" | "degraded" | "offline" | "checking" | "standalone";
 
 export interface EnclaveHealthState {
   status: EnclaveStatus;
@@ -43,12 +43,15 @@ export function useBackendHealth(pollIntervalMs: number = 30000): EnclaveHealthS
       setErrorDetail(null);
       setLastChecked(new Date());
 
-      if (result.status === "healthy") {
+      if (result.status === "standalone") {
+        setStatus("standalone");
+      } else if (result.status === "healthy") {
         setStatus("online");
       } else {
         setStatus("degraded");
       }
     } catch (err: any) {
+
       setLatencyMs(null);
       setLastChecked(new Date());
       setStatus("offline");

@@ -23,8 +23,9 @@ export interface ApiDiagnostics {
 
 const STORAGE_KEY_CUSTOM_API = "xerox_custom_api_url";
 
-// Default production backend endpoint (deployed Railway API)
-export const DEFAULT_PRODUCTION_API = "https://web-production-69de4.up.railway.app/api/v1";
+// Default production backend endpoint: empty by default (enables zero-latency Edge Standalone Mode)
+// When an analyst configures a custom backend or sets VITE_API_URL, it automatically connects.
+export const DEFAULT_PRODUCTION_API = "";
 
 /**
  * Safely retrieves an environment variable across Vite and Node.js environments.
@@ -196,8 +197,20 @@ export function getApiBaseUrl(): string {
 }
 
 /**
+ * Determines whether an active external backend API is configured.
+ * Returns false when operating in Edge Standalone Mode or if pointing to an obsolete host.
+ */
+export function isBackendConfigured(): boolean {
+  const url = getApiBaseUrl();
+  if (!url || url.trim() === "") return false;
+  if (url.includes("web-production-69de4.up.railway.app")) return false;
+  return true;
+}
+
+/**
  * Updates or clears the analyst's custom runtime API base URL.
  */
+
 export function setCustomApiUrl(url: string | null): ApiValidationResult {
   if (url === null || url.trim() === "") {
     if (typeof window !== "undefined") {
